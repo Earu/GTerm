@@ -1,5 +1,5 @@
 # GTerm
-Garry's Mod external console software. Requires the xconsole module to work.
+Garry's Mod external console software. **Requires the xconsole module to work.**
 
 ![screen1](https://cdn.discordapp.com/attachments/296410226742263809/924415240949596240/unknown.png)
 ![screen2](https://i.imgur.com/N0VEKPM.png)
