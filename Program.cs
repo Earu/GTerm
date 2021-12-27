@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace GTerm
@@ -11,7 +12,10 @@ namespace GTerm
     {
         private static readonly object Locker = new object();
         private static readonly LogListener Listener = new LogListener();
-        private static string ProcessPath = string.Empty;
+
+        private static bool LastMsgHadNewLine = true;
+        private static string ArchivePath = string.Empty;
+        private static Config Config = null;
 
         static void Main()
         {
@@ -23,9 +27,15 @@ namespace GTerm
             if (Process.GetProcesses().Count(p => p.ProcessName == processName) > 1)
                 return;
 
-            ProcessPath = Path.Combine(Path.GetDirectoryName(curProc.MainModule.FileName), "Archives");
-            if (!Directory.Exists(ProcessPath))
-                Directory.CreateDirectory("Archives");
+            string processPath = Path.GetDirectoryName(curProc.MainModule.FileName);
+            Config = new Config(processPath);
+
+            ArchivePath = Path.Combine(processPath, "Archives");
+            if (Config.ArchiveLogs)
+            {
+                if (!Directory.Exists(ArchivePath))
+                    Directory.CreateDirectory(ArchivePath);
+            }
 
             ShowWaitingConnection();
 
@@ -78,14 +88,24 @@ namespace GTerm
             return msg;
         }
 
-        private static bool LastMsgHadNewLine = true;
+        private static bool ShouldExcludeLog(string log)
+        {
+            foreach (Regex pattern in Config.ExclusionPatterns)
+            {
+                if (pattern.IsMatch(log)) return true;
+            }
+
+            return false;
+        }
+
         private static void OnLog(object sender, LogEventArgs args)
         {
             lock (Locker)
             {
-                //if (args.Message.Trim().Length == 0) return;
                 string log = args.Message;
-                string timeStamp = null; 
+                string timeStamp = null;
+
+                if (ShouldExcludeLog(log)) return;
 
                 System.Drawing.Color col = IsBlack(args.Color) ? System.Drawing.Color.White : args.Color;
                 string mk = $"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(log)}[/]";
@@ -102,8 +122,11 @@ namespace GTerm
                 LastMsgHadNewLine = args.Message.EndsWith("\n");
                 AnsiConsole.Write(new Markup(mk));
 
-                string fileName = $"{DateTime.Now.ToString("d").Replace("/", "_")}.log";
-                File.AppendAllText(Path.Combine(ProcessPath, fileName), log);
+                if (Config.ArchiveLogs)
+                {
+                    string fileName = $"{DateTime.Now.ToString("d").Replace("/", "_")}.log";
+                    File.AppendAllText(Path.Combine(ArchivePath, fileName), log);
+                }
             }
         }
     }
