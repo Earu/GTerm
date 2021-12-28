@@ -3,7 +3,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace GTerm
@@ -12,8 +14,11 @@ namespace GTerm
     {
         private static readonly object Locker = new object();
         private static readonly LogListener Listener = new LogListener();
+        private static readonly StringBuilder LogBuffer = new StringBuilder();
+        private static readonly StringBuilder MarkupBuffer = new StringBuilder();
+        private static readonly StringBuilder InputBuffer = new StringBuilder();
+        private static readonly Thread UserInputThread = new Thread(ProcessUserInput);
 
-        private static bool LastMsgHadNewLine = true;
         private static string ArchivePath = string.Empty;
         private static Config Config = null;
 
@@ -49,6 +54,39 @@ namespace GTerm
             Listener.OnLog += OnLog;
             Listener.OnError += OnError;
             Listener.Start();
+
+            UserInputThread.Start();
+        }
+
+        private static void ProcessUserInput()
+        {
+            while (true)
+            {
+                ConsoleKeyInfo keyInfo = Console.ReadKey();
+                switch (keyInfo.Key)
+                {
+                    case ConsoleKey.Enter:
+                        {
+                            string input = InputBuffer.ToString();
+                            InputBuffer.Clear();
+
+                            if (string.IsNullOrWhiteSpace(input.Trim())) continue;
+
+                            Listener.WriteMessage(input);
+                        }
+                        break;
+                    case ConsoleKey.Backspace:
+                        if (InputBuffer.Length > 0)
+                            InputBuffer.Remove(InputBuffer.Length - 1, 1);
+                        break;
+                    default:
+                        InputBuffer.Append(keyInfo.KeyChar);
+                        if (InputBuffer.Length > 255) // source console is limited to 255 characters
+                            InputBuffer.Remove(254, InputBuffer.Length - 255);
+
+                        break;
+                }
+            }
         }
 
         private static void ShowWaitingConnection()
@@ -102,30 +140,54 @@ namespace GTerm
         {
             lock (Locker)
             {
-                string log = args.Message;
-                string timeStamp = null;
+                string timeStamp = DateTime.Now.ToString("T");
 
-                if (ShouldExcludeLog(log)) return;
-
-                System.Drawing.Color col = IsBlack(args.Color) ? System.Drawing.Color.White : args.Color;
-                string mk = $"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(log)}[/]";
-
-                if (LastMsgHadNewLine)
+                // if the buffers are empty then its a newline, add timestamp
+                if (MarkupBuffer.Length == 0 && LogBuffer.Length == 0)
                 {
-                    if (log == "\n") return;
-
-                    timeStamp = DateTime.Now.ToString("T");
-                    mk = $"[#ffaf00]{timeStamp}[/] | " + mk;
-                    log = $"{timeStamp} | {log}";
+                    MarkupBuffer.Append($"[#ffaf00]{timeStamp}[/] | ");
+                    LogBuffer.Append($"{timeStamp} | ");
                 }
 
-                LastMsgHadNewLine = args.Message.EndsWith("\n");
-                AnsiConsole.Write(new Markup(mk));
+                LogBuffer.Append(args.Message);
 
-                if (Config.ArchiveLogs)
+                System.Drawing.Color col = IsBlack(args.Color) ? System.Drawing.Color.White : args.Color;
+                MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(args.Message)}[/]");
+                
+                // if the message ends with a newline then flush it to the console
+                if (args.Message.EndsWith("\n"))
                 {
-                    string fileName = $"{DateTime.Now.ToString("d").Replace("/", "_")}.log";
-                    File.AppendAllText(Path.Combine(ArchivePath, fileName), log);
+                    string mk = MarkupBuffer.ToString();
+                    string log = LogBuffer.ToString();
+
+                    MarkupBuffer.Clear();
+                    LogBuffer.Clear();
+
+                    string logChunk = log.Split('|')[1]; // there should always be 1
+                    if (string.IsNullOrWhiteSpace(logChunk) || ShouldExcludeLog(logChunk)) return;
+
+                    int currentTopCursor = Console.CursorTop;
+                    int currentLeftCursor = Console.CursorLeft;
+
+                    Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, currentTopCursor + 1);
+                    Console.CursorTop = currentTopCursor;
+                    Console.CursorLeft = 0;
+
+                    AnsiConsole.Write(new Markup(mk));
+                    
+                    if (currentTopCursor + 1 >= Console.BufferHeight)
+                    {
+                        Console.Write(InputBuffer.ToString());
+                    }
+
+                    Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor + 1);
+                    Console.CursorLeft = currentLeftCursor;
+
+                    if (Config.ArchiveLogs)
+                    {
+                        string fileName = $"{DateTime.Now.ToString("d").Replace("/", "_")}.log";
+                        File.AppendAllText(Path.Combine(ArchivePath, fileName), log);
+                    }
                 }
             }
         }
