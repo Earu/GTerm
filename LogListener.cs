@@ -6,6 +6,7 @@ using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace GTerm
 {
@@ -20,11 +21,11 @@ namespace GTerm
             this.Message = msg;
         }
 
-        public int Type { get; private set; }
-        public int Level { get; private set; }
-        public string Group { get; private set; }
-        public Color Color { get; private set; }
-        public string Message { get; private set; }
+        internal int Type { get; private set; }
+        internal int Level { get; private set; }
+        internal string Group { get; private set; }
+        internal Color Color { get; private set; }
+        internal string Message { get; private set; }
 
     }
 
@@ -34,13 +35,26 @@ namespace GTerm
     {
         private const int BUFFER_SIZE = 8192;
         private readonly byte[] Buffer = new byte[BUFFER_SIZE];
+        private readonly NamedPipeClientStream Pipe;
 
-        public event EventHandler OnConnected;
-        public event EventHandler OnDisconnected;
-        public event ErrorEventHandler OnError;
-        public event LogEventHandler OnLog;
+        internal event EventHandler OnConnected;
+        internal event EventHandler OnDisconnected;
+        internal event ErrorEventHandler OnError;
+        internal event LogEventHandler OnLog;
 
-        public bool IsConnected { get; private set; }
+        internal LogListener()
+        {
+            this.Pipe = new NamedPipeClientStream(
+                ".",
+                "garrysmod_console",
+                PipeAccessRights.Read | PipeAccessRights.Write,
+                PipeOptions.Asynchronous,
+                TokenImpersonationLevel.Anonymous,
+                HandleInheritability.None
+            );
+        }
+
+        internal bool IsConnected { get; private set; }
 
         private void SetConnectionStatus(bool connected)
         {
@@ -62,72 +76,75 @@ namespace GTerm
             return Encoding.UTF8.GetString(list.ToArray());
         }
 
-        private void ProcessMessages()
+        private async Task ProcessMessages()
         {
-            using (NamedPipeClientStream pipe = new NamedPipeClientStream(
-                    ".",
-                    "garrysmod_console",
-                    PipeAccessRights.Read | PipeAccessRights.WriteAttributes,
-                    PipeOptions.Asynchronous,
-                    TokenImpersonationLevel.Anonymous,
-                    HandleInheritability.None
-                ))
+            while (true)
             {
-                while (true)
+                try
                 {
-                    try
+                    await this.Pipe.ConnectAsync();
+                    this.Pipe.ReadMode = PipeTransmissionMode.Message;
+
+                    this.SetConnectionStatus(true);
+
+                    while (this.Pipe.IsConnected)
                     {
-                        pipe.Connect();
-                        pipe.ReadMode = PipeTransmissionMode.Message;
-
-                        this.SetConnectionStatus(true);
-
-                        while (pipe.IsConnected)
+                        try
                         {
-                            try
+                            int read = await this.Pipe.ReadAsync(this.Buffer, 0, BUFFER_SIZE);
+                            if (read == 0) continue;
+
+                            using (BinaryReader reader = new BinaryReader(new MemoryStream(this.Buffer, 0, read)))
                             {
-                                int read = pipe.Read(this.Buffer, 0, BUFFER_SIZE);
-                                if (read == 0) continue;
+                                int type = reader.ReadInt32();
+                                int level = reader.ReadInt32();
+                                string group = this.ReadString(reader);
+                                Color color = Color.FromArgb(
+                                    reader.ReadByte(),
+                                    reader.ReadByte(),
+                                    reader.ReadByte()
+                                );
 
-                                using (BinaryReader reader = new BinaryReader(new MemoryStream(this.Buffer, 0, read)))
-                                {
-                                    int type = reader.ReadInt32();
-                                    int level = reader.ReadInt32();
-                                    string group = this.ReadString(reader);
-                                    Color color = Color.FromArgb(
-                                        reader.ReadByte(),
-                                        reader.ReadByte(),
-                                        reader.ReadByte()
-                                    );
+                                reader.ReadByte();
 
-                                    reader.ReadByte();
-
-                                    string msg = this.ReadString(reader);
-                                    this.OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, msg.Replace("<NEWLINE>", "\n")));
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                this.OnError?.Invoke(this, new ErrorEventArgs(ex));
+                                string msg = this.ReadString(reader);
+                                this.OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, msg.Replace("<NEWLINE>", "\n")));
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            this.OnError?.Invoke(this, new ErrorEventArgs(ex));
+                        }
+                    }
 
-                        this.SetConnectionStatus(false);
-                    }
-                    catch (TimeoutException) { } // ignore that
-                    catch (Exception ex)
-                    {
-                        this.OnError?.Invoke(this, new ErrorEventArgs(ex));
-                    }
+                    this.SetConnectionStatus(false);
+                }
+                catch (TimeoutException) { } // ignore that
+                catch (Exception ex)
+                {
+                    this.OnError?.Invoke(this, new ErrorEventArgs(ex));
                 }
             }
-
         }
 
-        public void Start()
+        internal void Start()
         {
-            Thread thread = new Thread(this.ProcessMessages);
-            thread.Start();
+            Task.Run(this.ProcessMessages);
+        }
+
+        internal async Task WriteMessage(string input)
+        {
+            if (!this.Pipe.IsConnected) return;
+
+            try
+            {
+                byte[] buffer = Encoding.UTF8.GetBytes(input);
+                await this.Pipe.WriteAsync(buffer, 0, buffer.Length);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
         }
     }
 }
