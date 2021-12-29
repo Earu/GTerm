@@ -1,8 +1,10 @@
 ﻿using Spectre.Console;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -58,8 +60,47 @@ namespace GTerm
             UserInputThread.Start();
         }
 
+        /// <summary>
+        /// Tries to parse the current user gmod console keys, and use them further for minimizing GTerm
+        /// </summary>
+        /// <returns>Found console keys</returns>
+        private static List<ConsoleKey> GetGmodConsoleKeys()
+        {
+            List<ConsoleKey> consoleTriggerKeys = new List<ConsoleKey>();
+
+            Process gmodProc = Process.GetProcessesByName("gmod").FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
+            if (gmodProc == null) return consoleTriggerKeys;
+
+            string gmodBinPath = Path.GetDirectoryName(gmodProc.MainModule.FileName);
+            int? index = gmodBinPath?.IndexOf("GarrysMod");
+            if (index == null && index == -1) return consoleTriggerKeys;
+
+            string baseGmodPath = gmodBinPath.Substring(0, index.Value + "GarrysMod".Length);
+            string cfgPath = Path.Combine(baseGmodPath, "garrysmod/cfg/config.cfg");
+            if (!File.Exists(cfgPath)) return consoleTriggerKeys;
+
+            string[] cfgLines = File.ReadAllLines(cfgPath);
+            foreach (string cfgLine in cfgLines)
+            {
+                string[] lineChunks = cfgLine.Split(' ')
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Select(s => s.Replace("\"", string.Empty).Trim())
+                    .ToArray();
+
+                if (lineChunks.Length >= 3 && lineChunks[0] == "bind" && lineChunks[2].IndexOf("toggleconsole") != -1)
+                {
+                    string keyName = lineChunks[1].ToUpper()[1] + lineChunks[1].Substring(1).ToLower();
+                    if (Enum.TryParse(keyName, out ConsoleKey key))
+                        consoleTriggerKeys.Add(key);
+                }
+            }
+
+            return consoleTriggerKeys;
+        }
+
         private static void ProcessUserInput()
         {
+            List<ConsoleKey> gmodConsoleKeys = GetGmodConsoleKeys();
             while (true)
             {
                 ConsoleKeyInfo keyInfo = Console.ReadKey();
@@ -72,13 +113,21 @@ namespace GTerm
 
                             if (string.IsNullOrWhiteSpace(input.Trim())) continue;
 
-                            Listener.WriteMessage(input);
+                            _ = Listener.WriteMessage(input);
                         }
                         break;
+
                     case ConsoleKey.Backspace:
                         if (InputBuffer.Length > 0)
                             InputBuffer.Remove(InputBuffer.Length - 1, 1);
                         break;
+
+                    case ConsoleKey key when gmodConsoleKeys.Contains(key):
+                    case ConsoleKey.Escape:
+                        IntPtr hWndConsole = GetConsoleWindow();
+                        ShowWindow(hWndConsole, SW_MINIMIZE);
+                        break;
+
                     default:
                         InputBuffer.Append(keyInfo.KeyChar);
                         if (InputBuffer.Length > 255) // source console is limited to 255 characters
@@ -191,5 +240,14 @@ namespace GTerm
                 }
             }
         }
+
+        const int SW_MINIMIZE = 6;
+
+        [DllImport("Kernel32.dll", CallingConvention = CallingConvention.StdCall, SetLastError = true)]
+        private static extern IntPtr GetConsoleWindow();
+
+        [DllImport("User32.dll", CallingConvention = CallingConvention.StdCall, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ShowWindow([In] IntPtr hWnd, [In] int nCmdShow);
     }
 }
