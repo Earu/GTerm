@@ -61,7 +61,6 @@ namespace GTerm
 
             GmodInterop.InstallXConsole(); // try to install xconsole
 
-            Config.StartAsGmod = true;
             if (Config.StartAsGmod)
             {
                 if (!GmodInterop.StartGmod()) return;
