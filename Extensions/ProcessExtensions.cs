@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace GTerm
+namespace GTerm.Extensions
 {
     public static class ProcessExtensions
     {
