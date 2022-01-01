@@ -1,15 +1,14 @@
-﻿using Spectre.Console;
+﻿using GTerm.Extensions;
+using Spectre.Console;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using VdfParser;
 
 namespace GTerm
 {
@@ -27,14 +26,13 @@ namespace GTerm
 
         static void Main()
         {
-            Console.Title = "GTerm";
-
             // prevent running it multiple times
             Process curProc = Process.GetCurrentProcess();
             string processName = curProc.ProcessName;
             if (Process.GetProcesses().Count(p => p.ProcessName == processName) > 1)
                 return;
 
+            SetMetadata();
 
             string processPath = Path.GetDirectoryName(curProc.MainModule.FileName);
             Config = new Config(processPath);
@@ -61,123 +59,45 @@ namespace GTerm
                     Directory.CreateDirectory(ArchivePath);
             }
 
-            if (!Config.StartAsGmod)
+            GmodInterop.InstallXConsole(); // try to install xconsole
+
+            Config.StartAsGmod = true;
+            if (Config.StartAsGmod)
             {
+                if (!GmodInterop.StartGmod()) return;
+            }
+
+            ShowWaitingConnection();
+
+            Listener.OnConnected += (_, __) => AnsiConsole.Markup("[bold green]Connected![/]");
+            Listener.OnDisconnected += (_, __) =>
+            {
+                AnsiConsole.Markup("[bold red]Disconnected[/]");
                 ShowWaitingConnection();
+            };
 
-                Listener.OnConnected += (_, __) => AnsiConsole.Markup("[bold green]Connected![/]");
-                Listener.OnDisconnected += (_, __) =>
-                {
-                    AnsiConsole.Markup("[bold red]Disconnected[/]");
-                    ShowWaitingConnection();
-                };
+            Listener.OnLog += OnLog;
+            Listener.OnError += OnError;
+            Listener.Start();
 
-                Listener.OnLog += OnLog;
-                Listener.OnError += OnError;
-                Listener.Start();
-
-                UserInputThread.Start();
-            }
-            else
-            {
-                if (TryGetGmodPath(out string gmodPath))
-                {
-                    Process gmodProc = Process.Start(new ProcessStartInfo
-                    {
-                        Arguments = "-textmode",
-                        FileName = gmodPath,
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                    });
-
-                    gmodProc.EnableRaisingEvents = true;
-                    gmodProc.OutputDataReceived += (s, log) => OnLog(s, new LogEventArgs(0, 0, "General", System.Drawing.Color.White, log.Data));
-                    gmodProc.ErrorDataReceived += (s, err) => OnLog(s, new LogEventArgs(0, 0, "General", System.Drawing.Color.Red, err.Data));
-                    gmodProc.Exited += (_, __) => Environment.Exit(gmodProc.ExitCode);
-
-                    UserInputThread.Start();
-                }
-            }
+            UserInputThread.Start();
         }
 
-        private static bool TryGetGmodPath(out string gmodPath)
+        private static void SetMetadata()
         {
-            string programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-            string steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
+            Console.Clear();
 
-            FileStream testFile = File.OpenRead(steamLibsDescFilePath);
-            VdfDeserializer deserializer = new VdfDeserializer();
-            dynamic result = deserializer.Deserialize(testFile);
-            foreach(dynamic kv in result.libraryfolders)
+            Console.Title = "GTerm";
+            if (GmodInterop.TryGetGmodPath(out string gmodPath))
             {
-                if (!int.TryParse(kv.Key, out int _)) continue; // dont take things that arent steam libs
-                foreach (dynamic appKv in kv.Value.apps)
-                {
-                    if (appKv.Key != "4000") continue;
-
-                    gmodPath = Path.Combine(kv.Value.path, "steamapps/common/GarrysMod");
-                    string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
-                    string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
-                    if (File.Exists(gmodPathX64))
-                        gmodPath = gmodPathX64;
-                    else if (File.Exists(gmodPathX86))
-                        gmodPath = gmodPathX86;
-                    else
-                        gmodPath = Path.Combine(gmodPath, "hl2.exe");
-
-                    return true;
-                }
+                // copy icon from the gmod exe
+                Win32Extensions.SetConsoleIcon(gmodPath);
             }
-
-            gmodPath = null;
-            return false;
-        }
-
-        /// <summary>
-        /// Tries to parse the current user gmod console keys, and use them further for minimizing GTerm
-        /// </summary>
-        /// <returns>Found console keys</returns>
-        private static List<ConsoleKey> GetGmodConsoleKeys()
-        {
-            List<ConsoleKey> consoleTriggerKeys = new List<ConsoleKey>();
-
-            Process gmodProc = Process.GetProcessesByName("gmod").FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
-            if (gmodProc == null) return consoleTriggerKeys;
-
-            if (!TryGetGmodPath(out string gmodBinPath)) return consoleTriggerKeys;
-
-            int? index = gmodBinPath?.IndexOf("GarrysMod");
-            if (index == null && index == -1) return consoleTriggerKeys;
-
-            string baseGmodPath = gmodBinPath.Substring(0, index.Value + "GarrysMod".Length);
-            string cfgPath = Path.Combine(baseGmodPath, "garrysmod/cfg/config.cfg");
-            if (!File.Exists(cfgPath)) return consoleTriggerKeys;
-
-            string[] cfgLines = File.ReadAllLines(cfgPath);
-            foreach (string cfgLine in cfgLines)
-            {
-                string[] lineChunks = cfgLine.Split(' ')
-                    .Where(s => !string.IsNullOrWhiteSpace(s))
-                    .Select(s => s.Replace("\"", string.Empty).Trim())
-                    .ToArray();
-
-                if (lineChunks.Length >= 3 && lineChunks[0] == "bind" && lineChunks[2].IndexOf("toggleconsole") != -1)
-                {
-                    string keyName = lineChunks[1].ToUpper()[1] + lineChunks[1].Substring(1).ToLower();
-                    if (Enum.TryParse(keyName, out ConsoleKey key))
-                        consoleTriggerKeys.Add(key);
-                }
-            }
-
-            return consoleTriggerKeys;
         }
 
         private static void ProcessUserInput()
         {
-            List<ConsoleKey> gmodConsoleKeys = GetGmodConsoleKeys();
+            List<ConsoleKey> gmodConsoleKeys = GmodInterop.GetConsoleBindings();
             while (true)
             {
                 ConsoleKeyInfo keyInfo = Console.ReadKey();
@@ -201,8 +121,8 @@ namespace GTerm
 
                     case ConsoleKey key when gmodConsoleKeys.Contains(key):
                     case ConsoleKey.Escape:
-                        IntPtr hWndConsole = GetConsoleWindow();
-                        ShowWindow(hWndConsole, SW_MINIMIZE);
+                        IntPtr hWndConsole = Win32Extensions.GetConsoleWindow();
+                        Win32Extensions.ShowWindow(hWndConsole, Win32Extensions.SW_MINIMIZE);
                         break;
 
                     default:
@@ -318,13 +238,5 @@ namespace GTerm
             }
         }
 
-        const int SW_MINIMIZE = 6;
-
-        [DllImport("Kernel32.dll", CallingConvention = CallingConvention.StdCall, SetLastError = true)]
-        private static extern IntPtr GetConsoleWindow();
-
-        [DllImport("User32.dll", CallingConvention = CallingConvention.StdCall, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool ShowWindow([In] IntPtr hWnd, [In] int nCmdShow);
     }
 }
