@@ -1,4 +1,6 @@
 {
   "ExclusionPatterns": [],
-  "ArchiveLogs": true 
+  "ArchiveLogs": true,
+  "MonitorGmod": true,
+  "StartAsGmod": false
 }

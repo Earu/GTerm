@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using VdfParser;
 
 namespace GTerm
 {
@@ -34,8 +35,24 @@ namespace GTerm
             if (Process.GetProcesses().Count(p => p.ProcessName == processName) > 1)
                 return;
 
+
             string processPath = Path.GetDirectoryName(curProc.MainModule.FileName);
             Config = new Config(processPath);
+
+            if (Config.MonitorGmod)
+            {
+                Process parent = curProc.GetParent();
+                if (parent?.MainModule.ModuleName == "gmod.exe")
+                {
+                    parent.EnableRaisingEvents = true;
+                    parent.Exited += (_, __) =>
+                    {
+                        if (parent.ExitCode == 0) return;
+                        Process.Start(parent.StartInfo); // reboot gmod because crash and it was the owning process
+                        curProc.Kill(); // we also kill the current process, because its likely it will be rebooted from gmod
+                    };
+                }
+            }
 
             ArchivePath = Path.Combine(processPath, "Archives");
             if (Config.ArchiveLogs)
@@ -44,20 +61,79 @@ namespace GTerm
                     Directory.CreateDirectory(ArchivePath);
             }
 
-            ShowWaitingConnection();
-
-            Listener.OnConnected += (_, __) => AnsiConsole.Markup("[bold green]Connected![/]");
-            Listener.OnDisconnected += (_, __) =>
+            if (!Config.StartAsGmod)
             {
-                AnsiConsole.Markup("[bold red]Disconnected[/]");
                 ShowWaitingConnection();
-            };
 
-            Listener.OnLog += OnLog;
-            Listener.OnError += OnError;
-            Listener.Start();
+                Listener.OnConnected += (_, __) => AnsiConsole.Markup("[bold green]Connected![/]");
+                Listener.OnDisconnected += (_, __) =>
+                {
+                    AnsiConsole.Markup("[bold red]Disconnected[/]");
+                    ShowWaitingConnection();
+                };
 
-            UserInputThread.Start();
+                Listener.OnLog += OnLog;
+                Listener.OnError += OnError;
+                Listener.Start();
+
+                UserInputThread.Start();
+            }
+            else
+            {
+                if (TryGetGmodPath(out string gmodPath))
+                {
+                    Process gmodProc = Process.Start(new ProcessStartInfo
+                    {
+                        Arguments = "-textmode",
+                        FileName = gmodPath,
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    });
+
+                    gmodProc.EnableRaisingEvents = true;
+                    gmodProc.OutputDataReceived += (s, log) => OnLog(s, new LogEventArgs(0, 0, "General", System.Drawing.Color.White, log.Data));
+                    gmodProc.ErrorDataReceived += (s, err) => OnLog(s, new LogEventArgs(0, 0, "General", System.Drawing.Color.Red, err.Data));
+                    gmodProc.Exited += (_, __) => Environment.Exit(gmodProc.ExitCode);
+
+                    UserInputThread.Start();
+                }
+            }
+        }
+
+        private static bool TryGetGmodPath(out string gmodPath)
+        {
+            string programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            string steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
+
+            FileStream testFile = File.OpenRead(steamLibsDescFilePath);
+            VdfDeserializer deserializer = new VdfDeserializer();
+            dynamic result = deserializer.Deserialize(testFile);
+            foreach(dynamic kv in result.libraryfolders)
+            {
+                if (!int.TryParse(kv.Key, out int _)) continue; // dont take things that arent steam libs
+                foreach (dynamic appKv in kv.Value.apps)
+                {
+                    if (appKv.Key != "4000") continue;
+
+                    gmodPath = Path.Combine(kv.Value.path, "steamapps/common/GarrysMod");
+                    string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
+                    string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
+                    if (File.Exists(gmodPathX64))
+                        gmodPath = gmodPathX64;
+                    else if (File.Exists(gmodPathX86))
+                        gmodPath = gmodPathX86;
+                    else
+                        gmodPath = Path.Combine(gmodPath, "hl2.exe");
+
+                    return true;
+                }
+            }
+
+            gmodPath = null;
+            return false;
         }
 
         /// <summary>
@@ -71,7 +147,8 @@ namespace GTerm
             Process gmodProc = Process.GetProcessesByName("gmod").FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
             if (gmodProc == null) return consoleTriggerKeys;
 
-            string gmodBinPath = Path.GetDirectoryName(gmodProc.MainModule.FileName);
+            if (!TryGetGmodPath(out string gmodBinPath)) return consoleTriggerKeys;
+
             int? index = gmodBinPath?.IndexOf("GarrysMod");
             if (index == null && index == -1) return consoleTriggerKeys;
 
