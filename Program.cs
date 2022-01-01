@@ -37,10 +37,13 @@ namespace GTerm
             string processPath = Path.GetDirectoryName(curProc.MainModule.FileName);
             Config = new Config(processPath);
 
-            if (Config.MonitorGmod)
+
+            Process parent = curProc.GetParent();
+            if (parent?.MainModule.ModuleName == "gmod.exe")
             {
-                Process parent = curProc.GetParent();
-                if (parent?.MainModule.ModuleName == "gmod.exe")
+                Config.StartAsGmod = false; // this cannot be true if gmod already runs GTerm as a child process
+
+                if (Config.MonitorGmod)
                 {
                     parent.EnableRaisingEvents = true;
                     parent.Exited += (_, __) =>
