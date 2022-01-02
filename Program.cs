@@ -111,6 +111,9 @@ namespace GTerm
 
                             if (string.IsNullOrWhiteSpace(input.Trim())) continue;
 
+                            if (input.Trim().ToLower() == "clear")
+                                Console.Clear();
+
                             _ = Listener.WriteMessage(input);
                         }
                         break;
