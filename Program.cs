@@ -24,7 +24,7 @@ namespace GTerm
         private static string ArchivePath = string.Empty;
         private static Config Config = null;
 
-        static void Main()
+        static void Main(string[] args)
         {
             // prevent running it multiple times
             Process curProc = Process.GetCurrentProcess();
@@ -34,9 +34,7 @@ namespace GTerm
 
             SetMetadata();
 
-            string processPath = Path.GetDirectoryName(curProc.MainModule.FileName);
-            Config = new Config(processPath);
-
+            Config = new Config(args);
 
             Process parent = curProc.GetParent();
             if (parent?.MainModule.ModuleName == "gmod.exe")
@@ -55,6 +53,7 @@ namespace GTerm
                 }
             }
 
+            string processPath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
             ArchivePath = Path.Combine(processPath, "Archives");
             if (Config.ArchiveLogs)
             {
