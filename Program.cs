@@ -14,6 +14,15 @@ namespace GTerm
 {
     class Program
     {
+        private const string HEADER = @"
+ ██████ ████████ ███████ ██████  ███    ███ 
+██         ██    ██      ██   ██ ████  ████ 
+██   ███   ██    █████   ██████  ██ ████ ██ 
+██    ██   ██    ██      ██   ██ ██  ██  ██ 
+ ██████    ██    ███████ ██   ██ ██      ██ 
+                                            
+";
+
         private static readonly object Locker = new object();
         private static readonly LogListener Listener = new LogListener();
         private static readonly StringBuilder LogBuffer = new StringBuilder();
@@ -70,7 +79,36 @@ namespace GTerm
 
             ShowWaitingConnection();
 
-            Listener.OnConnected += (_, __) => AnsiConsole.Markup("[bold green]Connected![/]");
+            Listener.OnConnected += (_, __) =>
+            {
+                Console.Clear();
+
+                Console.ForegroundColor = ConsoleColor.Green;
+
+                Console.WriteLine(new string('=', Console.BufferWidth - 1));
+                Console.WriteLine(HEADER);
+                Console.WriteLine(new string('=', Console.BufferWidth - 1));
+
+                Console.WriteLine("Welcome to GTerm! You can read your Garry's Mod logs from here in real-time.");
+                Console.WriteLine("You can also execute any command you normally would by typing here!");
+                Console.WriteLine();
+                Console.WriteLine();
+                Console.Write("If you have any issue with GTerm please open an issue at: ");
+
+                Console.BackgroundColor = ConsoleColor.White;
+                Console.ForegroundColor = ConsoleColor.Black;
+
+                Console.WriteLine("https://github.com/Earu/GTerm/issues");
+
+                Console.BackgroundColor = ConsoleColor.Black;
+                Console.ForegroundColor = ConsoleColor.Green;
+
+                Console.WriteLine("Enjoy your stay!");
+                Console.Write("\n\n\n");
+
+                Console.ForegroundColor = ConsoleColor.White;
+            };
+
             Listener.OnDisconnected += (_, __) =>
             {
                 AnsiConsole.Markup("[bold red]Disconnected[/]");
@@ -101,7 +139,7 @@ namespace GTerm
             List<ConsoleKey> gmodConsoleKeys = GmodInterop.GetConsoleBindings();
             while (true)
             {
-                ConsoleKeyInfo keyInfo = Console.ReadKey();
+                ConsoleKeyInfo keyInfo = Console.ReadKey(true);
                 switch (keyInfo.Key)
                 {
                     case ConsoleKey.Enter:
@@ -121,6 +159,14 @@ namespace GTerm
                     case ConsoleKey.Backspace:
                         if (InputBuffer.Length > 0)
                             InputBuffer.Remove(InputBuffer.Length - 1, 1);
+
+                        int oldCursorLeft = Console.CursorLeft;
+                        int oldCursorTop = Console.CursorTop;
+                        Console.CursorLeft = 0;
+                        Console.Write(new string(' ', Console.BufferWidth - 1));
+                        Console.CursorLeft = oldCursorLeft;
+                        Console.CursorTop = oldCursorTop;
+
                         break;
 
                     case ConsoleKey key when gmodConsoleKeys.Contains(key):
@@ -136,6 +182,8 @@ namespace GTerm
 
                         break;
                 }
+
+                Console.Write("\r" + InputBuffer.ToString());
             }
         }
 
@@ -190,7 +238,7 @@ namespace GTerm
         {
             lock (Locker)
             {
-                string timeStamp = DateTime.Now.ToString("T");
+                string timeStamp = DateTime.Now.ToString("hh:mm:ss");
 
                 // if the buffers are empty then its a newline, add timestamp
                 if (MarkupBuffer.Length == 0 && LogBuffer.Length == 0)
@@ -225,6 +273,7 @@ namespace GTerm
 
                     AnsiConsole.Write(new Markup(mk));
                     
+                    // this makes typing when the console is filled more stable
                     if (currentTopCursor + 1 >= Console.BufferHeight)
                     {
                         Console.Write(InputBuffer.ToString());
