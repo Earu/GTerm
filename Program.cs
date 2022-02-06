@@ -56,8 +56,13 @@ namespace GTerm
                     parent.Exited += (_, __) =>
                     {
                         if (parent.ExitCode == 0) return;
-                        Process.Start(parent.StartInfo); // reboot gmod because crash and it was the owning process
-                        curProc.Kill(); // we also kill the current process, because its likely it will be rebooted from gmod
+
+                        ProcessStartInfo oldStartInfo = parent.StartInfo;
+                        if (GmodInterop.TryGetGmodPath(out string gmodBinpath)) {
+                            oldStartInfo.FileName = gmodBinpath;
+                            Process.Start(parent.StartInfo); // reboot gmod because crash and it was the owning process
+                            curProc.Kill(); // we also kill the current process, because its likely it will be rebooted from gmod
+                        }
                     };
                 }
             }
