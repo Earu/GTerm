@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Security.Principal;
 using System.Text;
 using System.Threading;
@@ -107,8 +108,8 @@ namespace GTerm
 
                                 reader.ReadByte();
 
-                                string msg = this.ReadString(reader);
-                                this.OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, msg.Replace("<NEWLINE>", "\n")));
+                                string fullMsg = this.ReadString(reader).Replace("<NEWLINE>", "\n");
+                                this.OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
                             }
                         }
                         catch (Exception ex)
