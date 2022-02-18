@@ -5,7 +5,7 @@ Garry's Mod external console software.
 ![screen2](https://i.imgur.com/N0VEKPM.png)
 
 ## Installation
-- Download the latest (release)[https://github.com/Earu/GTerm/releases]
+- Download the latest [release](https://github.com/Earu/GTerm/releases)
 - Extract `GTerm.zip` wherever you feel is most suited
 - Launch GTerm.exe whenever Garry's Mod is running
 - Enjoy
