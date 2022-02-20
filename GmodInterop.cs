@@ -16,39 +16,47 @@ namespace GTerm
 
         internal static bool TryGetGmodPath(out string gmodPath, bool toBin = true)
         {
-            string programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-            string steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
-
-            FileStream libDescFile = File.OpenRead(steamLibsDescFilePath);
-            VdfDeserializer deserializer = new VdfDeserializer();
-            dynamic result = deserializer.Deserialize(libDescFile);
-            foreach (dynamic kv in result.libraryfolders)
+            try
             {
-                if (!int.TryParse(kv.Key, out int _)) continue; // dont take things that arent steam libs
-                foreach (dynamic appKv in kv.Value.apps)
+                string programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+                string steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
+
+                FileStream libDescFile = File.OpenRead(steamLibsDescFilePath);
+                VdfDeserializer deserializer = new VdfDeserializer();
+                dynamic result = deserializer.Deserialize(libDescFile);
+                foreach (dynamic kv in result.libraryfolders)
                 {
-                    if (appKv.Key != GMOD_ID) continue;
-
-                    gmodPath = Path.Combine(kv.Value.path, "steamapps/common/GarrysMod");
-
-                    if (toBin)
+                    if (!int.TryParse(kv.Key, out int _)) continue; // dont take things that arent steam libs
+                    foreach (dynamic appKv in kv.Value.apps)
                     {
-                        string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
-                        string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
-                        if (File.Exists(gmodPathX64))
-                            gmodPath = gmodPathX64;
-                        else if (File.Exists(gmodPathX86))
-                            gmodPath = gmodPathX86;
-                        else
-                            gmodPath = Path.Combine(gmodPath, "hl2.exe");
+                        if (appKv.Key != GMOD_ID) continue;
+
+                        gmodPath = Path.Combine(kv.Value.path, "steamapps/common/GarrysMod");
+
+                        if (toBin)
+                        {
+                            string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
+                            string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
+                            if (File.Exists(gmodPathX64))
+                                gmodPath = gmodPathX64;
+                            else if (File.Exists(gmodPathX86))
+                                gmodPath = gmodPathX86;
+                            else
+                                gmodPath = Path.Combine(gmodPath, "hl2.exe");
+                        }
+
+                        return true;
                     }
-
-                    return true;
                 }
-            }
 
-            gmodPath = null;
-            return false;
+                gmodPath = null;
+                return false;
+            }
+            catch
+            {
+                gmodPath = null;
+                return false;
+            }
         }
 
         /// <summary>
@@ -62,7 +70,7 @@ namespace GTerm
             if (!TryGetGmodPath(out string gmodBinPath)) return consoleTriggerKeys;
 
             int? index = gmodBinPath?.IndexOf("GarrysMod");
-            if (index == null && index == -1) return consoleTriggerKeys;
+            if (index == null || index == -1) return consoleTriggerKeys;
 
             string baseGmodPath = gmodBinPath.Substring(0, index.Value + "GarrysMod".Length);
             string cfgPath = Path.Combine(baseGmodPath, "garrysmod/cfg/config.cfg");
