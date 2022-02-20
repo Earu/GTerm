@@ -142,7 +142,9 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Modules\gmsv_xconsole_win32.dll" />
+    <Content Include="Modules\gmsv_xconsole_win32.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="Modules\gmsv_xconsole_win64.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
