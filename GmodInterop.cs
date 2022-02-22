@@ -20,6 +20,17 @@ namespace GTerm
             {
                 string programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
                 string steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
+                if (!File.Exists(steamLibsDescFilePath))
+                {
+                    programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                    steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
+                }
+
+                if (File.Exists(steamLibsDescFilePath))
+                {
+                    gmodPath = null;
+                    return false;
+                }
 
                 FileStream libDescFile = File.OpenRead(steamLibsDescFilePath);
                 VdfDeserializer deserializer = new VdfDeserializer();
@@ -65,34 +76,41 @@ namespace GTerm
         /// <returns>Found console keys</returns>
         internal static List<ConsoleKey> GetConsoleBindings()
         {
-            List<ConsoleKey> consoleTriggerKeys = new List<ConsoleKey>();
-
-            if (!TryGetGmodPath(out string gmodBinPath)) return consoleTriggerKeys;
-
-            int? index = gmodBinPath?.IndexOf("GarrysMod");
-            if (index == null || index == -1) return consoleTriggerKeys;
-
-            string baseGmodPath = gmodBinPath.Substring(0, index.Value + "GarrysMod".Length);
-            string cfgPath = Path.Combine(baseGmodPath, "garrysmod/cfg/config.cfg");
-            if (!File.Exists(cfgPath)) return consoleTriggerKeys;
-
-            string[] cfgLines = File.ReadAllLines(cfgPath);
-            foreach (string cfgLine in cfgLines)
+            try
             {
-                string[] lineChunks = cfgLine.Split(' ')
-                    .Where(s => !string.IsNullOrWhiteSpace(s))
-                    .Select(s => s.Replace("\"", string.Empty).Trim())
-                    .ToArray();
+                List<ConsoleKey> consoleTriggerKeys = new List<ConsoleKey>();
 
-                if (lineChunks.Length >= 3 && lineChunks[0] == "bind" && lineChunks[2].IndexOf("toggleconsole") != -1)
+                if (!TryGetGmodPath(out string gmodBinPath)) return consoleTriggerKeys;
+
+                int? index = gmodBinPath?.IndexOf("GarrysMod");
+                if (index == null || index == -1) return consoleTriggerKeys;
+
+                string baseGmodPath = gmodBinPath.Substring(0, index.Value + "GarrysMod".Length);
+                string cfgPath = Path.Combine(baseGmodPath, "garrysmod/cfg/config.cfg");
+                if (!File.Exists(cfgPath)) return consoleTriggerKeys;
+
+                string[] cfgLines = File.ReadAllLines(cfgPath);
+                foreach (string cfgLine in cfgLines)
                 {
-                    string keyName = lineChunks[1].ToUpper()[1] + lineChunks[1].Substring(1).ToLower();
-                    if (Enum.TryParse(keyName, out ConsoleKey key))
-                        consoleTriggerKeys.Add(key);
-                }
-            }
+                    string[] lineChunks = cfgLine.Split(' ')
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Select(s => s.Replace("\"", string.Empty).Trim())
+                        .ToArray();
 
-            return consoleTriggerKeys;
+                    if (lineChunks.Length >= 3 && lineChunks[0] == "bind" && lineChunks[2].IndexOf("toggleconsole") != -1)
+                    {
+                        string keyName = lineChunks[1].ToUpper()[1] + lineChunks[1].Substring(1).ToLower();
+                        if (Enum.TryParse(keyName, out ConsoleKey key))
+                            consoleTriggerKeys.Add(key);
+                    }
+                }
+
+                return consoleTriggerKeys;
+            }
+            catch
+            {
+                return new List<ConsoleKey>();
+            }
         }
 
         internal static bool InstallXConsole()
