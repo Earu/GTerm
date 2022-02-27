@@ -56,6 +56,12 @@ namespace GTerm
             {
                 this.ExclusionPatterns.Add(new Regex(pattern, RegexOptions.Compiled));
             }
+
+            LocalLogger.WriteLine("Config params:");
+            LocalLogger.WriteLine("Logs archiving: " + this.ArchiveLogs);
+            LocalLogger.WriteLine("Gmod monitoring: " + this.MonitorGmod);
+            LocalLogger.WriteLine("Start as Gmod: " + this.StartAsGmod);
+            LocalLogger.WriteLine("Exclusion Patterns: \n", string.Join("\n", this.ExclusionPatterns.Select(r => r.ToString())));
         }
 
         private Dictionary<string, List<string>> ParseCLIArgs(string[] args)

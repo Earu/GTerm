@@ -35,11 +35,16 @@ namespace GTerm
 
         static void Main(string[] args)
         {
+            LocalLogger.WriteLine("Starting up...");
+
             // prevent running it multiple times
             Process curProc = Process.GetCurrentProcess();
             string processName = curProc.ProcessName;
             if (Process.GetProcesses().Count(p => p.ProcessName == processName) > 1)
+            {
+                LocalLogger.WriteLine("Another instance of GTerm is running, aborting");
                 return;
+            }
 
             SetMetadata();
 
@@ -48,18 +53,22 @@ namespace GTerm
             Process parent = curProc.GetParent();
             if (parent?.MainModule.ModuleName == "gmod.exe")
             {
+                LocalLogger.WriteLine("Started from Gmod!");
                 Config.StartAsGmod = false; // this cannot be true if gmod already runs GTerm as a child process
 
                 if (Config.MonitorGmod)
                 {
+                    LocalLogger.WriteLine("Gmod monitoring starting");
                     parent.EnableRaisingEvents = true;
                     parent.Exited += (_, __) =>
                     {
                         if (parent.ExitCode == 0) return;
 
+                        LocalLogger.WriteLine("Gmod crashed, attempting to restart!");
                         ProcessStartInfo oldStartInfo = parent.StartInfo;
                         if (GmodInterop.TryGetGmodPath(out string gmodBinpath)) {
                             oldStartInfo.FileName = gmodBinpath;
+                            LocalLogger.WriteLine("Restarting Gmod!");
                             Process.Start(parent.StartInfo); // reboot gmod because crash and it was the owning process
                             curProc.Kill(); // we also kill the current process, because its likely it will be rebooted from gmod
                         }
@@ -72,7 +81,10 @@ namespace GTerm
             if (Config.ArchiveLogs)
             {
                 if (!Directory.Exists(ArchivePath))
+                {
+                    LocalLogger.WriteLine("Archives directory was not found, creating it at: ", ArchivePath);
                     Directory.CreateDirectory(ArchivePath);
+                }
             }
 
             GmodInterop.InstallXConsole(); // try to install xconsole
@@ -131,11 +143,18 @@ namespace GTerm
         {
             Console.Clear();
 
+            LocalLogger.WriteLine("Setting metadata");
+
             Console.Title = "GTerm";
             if (GmodInterop.TryGetGmodPath(out string gmodPath))
             {
                 // copy icon from the gmod exe
                 Win32Extensions.SetConsoleIcon(gmodPath);
+                LocalLogger.WriteLine("Set icon metadata");
+            }
+            else
+            {
+                LocalLogger.WriteLine("Failed to set icon metadata, gmod path not found");
             }
         }
 
