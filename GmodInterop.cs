@@ -1,4 +1,5 @@
 ﻿using GTerm.Extensions;
+using Microsoft.Win32;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -14,20 +15,45 @@ namespace GTerm
     {
         private const string GMOD_ID = "4000";
 
+        private static bool TryGetSteamVDFPath(out string vdfPath)
+        {
+            try
+            {
+                string steamInstallPath = Registry.GetValue(@"HKEY_CLASSES_ROOT\steamlink\Shell\Open\Command", null, null) as string;
+                if (string.IsNullOrWhiteSpace(steamInstallPath))
+                {
+                    steamInstallPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+                    vdfPath = Path.Combine(steamInstallPath, "Steam/steamapps/libraryfolders.vdf");
+                    if (!File.Exists(vdfPath))
+                    {
+                        steamInstallPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                        vdfPath = Path.Combine(steamInstallPath, "Steam/steamapps/libraryfolders.vdf");
+                        return File.Exists(vdfPath);
+                    }
+
+                    return true;
+                }
+                else
+                {
+                    steamInstallPath = Path.GetDirectoryName(steamInstallPath.Split('-').First().Replace("\"", string.Empty));
+                    vdfPath = Path.Combine(steamInstallPath, "steamapps/libraryfolders.vdf");
+                    return File.Exists(vdfPath);
+                }
+            }
+            catch
+            {
+                vdfPath = "?";
+                return false;
+            }
+        }
+
         internal static bool TryGetGmodPath(out string gmodPath, bool toBin = true)
         {
             try
             {
-                string programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-                string steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
-                if (!File.Exists(steamLibsDescFilePath))
+                if (!TryGetSteamVDFPath(out string steamLibsDescFilePath))
                 {
-                    programsPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-                    steamLibsDescFilePath = Path.Combine(programsPath, "Steam/steamapps/libraryfolders.vdf");
-                }
-
-                if (File.Exists(steamLibsDescFilePath))
-                {
+                    LocalLogger.WriteLine("vdf Steam file not found at :", steamLibsDescFilePath);
                     gmodPath = null;
                     return false;
                 }
@@ -38,6 +64,8 @@ namespace GTerm
                 foreach (dynamic kv in result.libraryfolders)
                 {
                     if (!int.TryParse(kv.Key, out int _)) continue; // dont take things that arent steam libs
+                    LocalLogger.WriteLine("Found Steam game library at :", kv.Value.path);
+
                     foreach (dynamic appKv in kv.Value.apps)
                     {
                         if (appKv.Key != GMOD_ID) continue;
@@ -60,11 +88,13 @@ namespace GTerm
                     }
                 }
 
+                LocalLogger.WriteLine("Could not find Gmod directory: Maybe it's not installed?");
                 gmodPath = null;
                 return false;
             }
-            catch
+            catch (Exception ex)
             {
+                LocalLogger.WriteLine("Could not find Gmod directory: ", ex.Message);
                 gmodPath = null;
                 return false;
             }
@@ -105,10 +135,12 @@ namespace GTerm
                     }
                 }
 
+                LocalLogger.WriteLine("Found console bindings: ", string.Join("\t", consoleTriggerKeys.Select(t => t.ToString())));
                 return consoleTriggerKeys;
             }
-            catch
+            catch (Exception ex)
             {
+                LocalLogger.WriteLine("Could not get Gmod console bindings: ", ex.Message);
                 return new List<ConsoleKey>();
             }
         }
@@ -119,6 +151,7 @@ namespace GTerm
 
             try
             {
+                LocalLogger.WriteLine("Installing xconsole");
                 string luaPath = Path.Combine(baseGmodPath, "garrysmod/lua");
                 string luaBinPath = Path.Combine(luaPath, "bin");
                 if (!Directory.Exists(luaBinPath))
@@ -144,9 +177,12 @@ namespace GTerm
                 string menuInitLuaCode = File.ReadAllText(menuInitFilePath);
                 if (menuInitLuaCode.IndexOf("xconsole") == -1)
                     File.AppendAllText(menuInitFilePath, "\nrequire(\"xconsole\")\n");
+
+                LocalLogger.WriteLine("Installation complete!");
             }
-            catch
+            catch (Exception ex)
             {
+                LocalLogger.WriteLine("Could not install xconsole: ", ex.Message);
                 AnsiConsole.WriteLine("[white on red]Could not install xconsole![/]");
                 return false;
             }
