@@ -117,6 +117,7 @@
     <Compile Include="Config.cs" />
     <Compile Include="Extensions\Win32Extensions.cs" />
     <Compile Include="GmodInterop.cs" />
+    <Compile Include="LocalLogger.cs" />
     <Compile Include="LogListener.cs" />
     <Compile Include="Extensions\ProcessExtensions.cs" />
     <Compile Include="Program.cs" />
