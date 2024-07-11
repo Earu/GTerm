@@ -162,18 +162,25 @@ namespace GTerm
             }
         }
 
-        internal static bool InstallXConsole()
+        internal static (bool, bool) InstallXConsole()
         {
-            if (!TryGetGmodPath(out string baseGmodPath, false) || !TryGetGmodPath(out string gmodBinPath)) return false;
+            bool hasInstalled = false;
+            bool success = false;
+
+            if (!TryGetGmodPath(out string baseGmodPath, false) || !TryGetGmodPath(out string gmodBinPath)) return (success, hasInstalled);
 
             try
             {
                 LocalLogger.WriteLine("Installing xconsole");
                 string luaPath = Path.Combine(baseGmodPath, "garrysmod/lua");
                 string luaBinPath = Path.Combine(luaPath, "bin");
-                if (!Directory.Exists(luaBinPath))
-                    Directory.CreateDirectory(luaBinPath);
 
+                if (!Directory.Exists(luaBinPath))
+                {
+                    Directory.CreateDirectory(luaBinPath);
+                    hasInstalled = true;
+                }
+                    
                 string gtermDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
                 bool isX64 = gmodBinPath.IndexOf("win64") != -1;
 
@@ -184,32 +191,41 @@ namespace GTerm
                 if (isX64 && !File.Exists(targetXConsoleX64FilePath) && File.Exists(sourceXConsoleX64FilePath))
                 {
                     File.Copy(sourceXConsoleX64FilePath, targetXConsoleX64FilePath);
+                    hasInstalled = true;
                 }
                 else if (!isX64 && !File.Exists(targetXConsoleX86FilePath) && File.Exists(sourceXConsoleX86FilePath))
                 {
                     File.Copy(sourceXConsoleX86FilePath, targetXConsoleX86FilePath);
+                    hasInstalled = true;
                 }
 
                 string menuInitFilePath = Path.Combine(luaPath, "menu/menu.lua");
                 string menuInitLuaCode = File.ReadAllText(menuInitFilePath);
                 if (menuInitLuaCode.IndexOf("xconsole") == -1)
-                    File.AppendAllText(menuInitFilePath, "\nrequire(\"xconsole\")\n");
-
-                LocalLogger.WriteLine("Installation complete!");
-
-                if (GetGmodProcess() != null)
                 {
-                    LocalLogger.WriteLine("[white on red]Garry's Mod needs to be restarted for GTerm to work properly.[/]");
+                    File.AppendAllText(menuInitFilePath, "\nrequire(\"xconsole\")\n");
+                    hasInstalled = true;
                 }
+
+                if (hasInstalled)
+                {
+                    LocalLogger.WriteLine("Installation complete!");
+
+                    if (GetGmodProcess() != null)
+                    {
+                        AnsiConsole.MarkupLine("[white on red]Garry's Mod needs to be restarted for GTerm to work properly.[/]");
+                    }
+                }
+                
+                success = true;
             }
             catch (Exception ex)
             {
                 LocalLogger.WriteLine("Could not install xconsole: ", ex.Message);
-                AnsiConsole.WriteLine("[white on red]Could not install xconsole![/]");
-                return false;
+                AnsiConsole.MarkupLine("[white on red]Could not install xconsole![/]");
             }
 
-            return true;
+            return (success, hasInstalled);
         }
 
         private static bool ConsoleEventCallback(int eventType)
