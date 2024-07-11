@@ -15,6 +15,9 @@ namespace GTerm
     {
         private const string GMOD_ID = "4000";
 
+        private static Process GetGmodProcess() 
+            => Process.GetProcessesByName("gmod").FirstOrDefault();
+
         private static bool TryGetSteamVDFPath(out string vdfPath)
         {
             try
@@ -51,40 +54,54 @@ namespace GTerm
         {
             try
             {
-                if (!TryGetSteamVDFPath(out string steamLibsDescFilePath))
+                // push this in priority
+                // fallback for installations from steamcmd and other weird things
+                // this will require gmod restart
+                Process gmodProcess = GetGmodProcess();
+                if (gmodProcess != null)
                 {
-                    LocalLogger.WriteLine("vdf Steam file not found at :", steamLibsDescFilePath);
-                    gmodPath = null;
-                    return false;
+                    string path = gmodProcess.MainModule.FileName.Replace('\\', '/');
+                    if (toBin)
+                    {
+                        gmodPath = path;
+                        return true;
+                    }
+
+                    int index = path.IndexOf("GarrysMod/bin");
+                    gmodPath = Path.Combine(path.Substring(0, index), "GarrysMod");
+                    return true;
                 }
 
-                FileStream libDescFile = File.OpenRead(steamLibsDescFilePath);
-                VdfDeserializer deserializer = new VdfDeserializer();
-                dynamic result = deserializer.Deserialize(libDescFile);
-                foreach (dynamic kv in result.libraryfolders)
+                if (TryGetSteamVDFPath(out string steamLibsDescFilePath))
                 {
-                    if (!int.TryParse(kv.Key, out int _)) continue; // dont take things that arent steam libs
-                    LocalLogger.WriteLine("Found Steam game library at :", kv.Value.path);
-
-                    foreach (dynamic appKv in kv.Value.apps)
+                    FileStream libDescFile = File.OpenRead(steamLibsDescFilePath);
+                    VdfDeserializer deserializer = new VdfDeserializer();
+                    dynamic result = deserializer.Deserialize(libDescFile);
+                    foreach (dynamic kv in result.libraryfolders)
                     {
-                        if (appKv.Key != GMOD_ID) continue;
+                        if (!int.TryParse(kv.Key, out int _)) continue; // dont take things that arent steam libs
+                        LocalLogger.WriteLine("Found Steam game library at :", kv.Value.path);
 
-                        gmodPath = Path.Combine(kv.Value.path, "steamapps/common/GarrysMod");
-
-                        if (toBin)
+                        foreach (dynamic appKv in kv.Value.apps)
                         {
-                            string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
-                            string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
-                            if (File.Exists(gmodPathX64))
-                                gmodPath = gmodPathX64;
-                            else if (File.Exists(gmodPathX86))
-                                gmodPath = gmodPathX86;
-                            else
-                                gmodPath = Path.Combine(gmodPath, "hl2.exe");
-                        }
+                            if (appKv.Key != GMOD_ID) continue;
 
-                        return true;
+                            gmodPath = Path.Combine(kv.Value.path, "steamapps/common/GarrysMod");
+
+                            if (toBin)
+                            {
+                                string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
+                                string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
+                                if (File.Exists(gmodPathX64))
+                                    gmodPath = gmodPathX64;
+                                else if (File.Exists(gmodPathX86))
+                                    gmodPath = gmodPathX86;
+                                else
+                                    gmodPath = Path.Combine(gmodPath, "hl2.exe");
+                            }
+
+                            return true;
+                        }
                     }
                 }
 
@@ -179,6 +196,11 @@ namespace GTerm
                     File.AppendAllText(menuInitFilePath, "\nrequire(\"xconsole\")\n");
 
                 LocalLogger.WriteLine("Installation complete!");
+
+                if (GetGmodProcess() != null)
+                {
+                    LocalLogger.WriteLine("[white on red]Garry's Mod needs to be restarted for GTerm to work properly.[/]");
+                }
             }
             catch (Exception ex)
             {
