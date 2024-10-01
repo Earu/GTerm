@@ -24,8 +24,7 @@ namespace GTerm
         internal int Level { get; private set; }
         internal string Group { get; private set; }
         internal Color Color { get; private set; }
-        internal string Message { get; private set; }
-
+        internal string Message { get; set; }
     }
 
     delegate void LogEventHandler(object sender, LogEventArgs args);
@@ -137,6 +136,8 @@ namespace GTerm
 
             try
             {
+                input = input.Replace("\0", "");
+
                 byte[] buffer = Encoding.UTF8.GetBytes(input);
                 await this.Pipe.WriteAsync(buffer, 0, buffer.Length);
             }
