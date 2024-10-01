@@ -263,57 +263,77 @@ namespace GTerm
             lock (Locker)
             {
                 string timeStamp = DateTime.Now.ToString("hh:mm:ss");
-
-                // if the buffers are empty then its a newline, add timestamp
-                if (MarkupBuffer.Length == 0 && LogBuffer.Length == 0)
-                {
-                    MarkupBuffer.Append($"[#ffaf00]{timeStamp}[/] | ");
-                    LogBuffer.Append($"{timeStamp} | ");
-                }
-
-                LogBuffer.Append(args.Message);
-
                 System.Drawing.Color col = IsBlack(args.Color) ? System.Drawing.Color.White : args.Color;
-                MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(args.Message)}[/]");
-                
-                // if the message ends with a newline then flush it to the console
-                if (args.Message.EndsWith("\n"))
+                string msg = args.Message;
+                int newLineIndex = msg.IndexOf('\n');
+                while (newLineIndex != -1)
                 {
+                    if (MarkupBuffer.Length == 0 && LogBuffer.Length == 0)
+                    {
+                        MarkupBuffer.Append($"[#ffaf00]{timeStamp}[/] | ");
+                        LogBuffer.Append($"{timeStamp} | ");
+                    }
+
+                    string chunk = msg.Substring(0, newLineIndex) + '\n';
+                    string nextChunk = msg.Length > newLineIndex + 1 ? msg.Substring(chunk.Length) : string.Empty;
+
+                    LogBuffer.Append(chunk);
+                    MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(chunk)}[/]");
+
                     string mk = MarkupBuffer.ToString();
                     string log = LogBuffer.ToString();
 
                     MarkupBuffer.Clear();
                     LogBuffer.Clear();
 
-                    string logChunk = log.Split('|')[1]; // there should always be 1
-                    if (string.IsNullOrWhiteSpace(logChunk) || ShouldExcludeLog(logChunk)) return;
-
-                    int currentTopCursor = Console.CursorTop;
-                    int currentLeftCursor = Console.CursorLeft;
-
-                    Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, currentTopCursor + 1);
-                    Console.CursorTop = currentTopCursor;
-                    Console.CursorLeft = 0;
-
-                    AnsiConsole.Write(new Markup(mk));
-                    
-                    // this makes typing when the console is filled more stable
-                    if (currentTopCursor + 1 >= Console.BufferHeight)
+                    string logChunk = log.IndexOf("|") != -1 ? string.Join("|", log.Split('|').Skip(1).ToArray()) : log; // there should always be 1
+                    if (!string.IsNullOrWhiteSpace(log))
                     {
-                        Console.Write(InputBuffer.ToString());
+                        if (ShouldExcludeLog(logChunk)) return;
+
+                        int currentTopCursor = Console.CursorTop;
+                        int currentLeftCursor = Console.CursorLeft;
+
+                        Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, Math.Min(Console.BufferHeight - 1, currentTopCursor + 1));
+                        Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor);
+                        Console.CursorLeft = 0;
+
+                        AnsiConsole.Write(new Markup(mk));
+
+                        // this makes typing when the console is filled more stable
+                        if (currentTopCursor + 1 >= Console.BufferHeight)
+                        {
+                            Console.Write(InputBuffer.ToString());
+                        }
+
+                        Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor + 1);
+                        Console.CursorLeft = currentLeftCursor;
+
+                        if (Config.ArchiveLogs)
+                        {
+                            string fileName = $"{DateTime.Now.ToString("d").Replace("/", "_")}.log";
+                            File.AppendAllText(Path.Combine(ArchivePath, fileName), log);
+                        }
                     }
 
-                    Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor + 1);
-                    Console.CursorLeft = currentLeftCursor;
+                    msg = nextChunk;
+                    newLineIndex = msg.IndexOf('\n');
 
-                    if (Config.ArchiveLogs)
-                    {
-                        string fileName = $"{DateTime.Now.ToString("d").Replace("/", "_")}.log";
-                        File.AppendAllText(Path.Combine(ArchivePath, fileName), log);
-                    }
+                    if (msg.Length == 0) break;
+                }
+
+                if (MarkupBuffer.Length == 0 && LogBuffer.Length == 0)
+                {
+                    MarkupBuffer.Append($"[#ffaf00]{timeStamp}[/] | ");
+                    LogBuffer.Append($"{timeStamp} | ");
+                }
+
+                if (msg.Length > 0)
+                {
+                    LogBuffer.Append(msg);
+                    MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(msg)}[/]");
                 }
             }
         }
-
     }
 }
