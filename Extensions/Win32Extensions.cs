@@ -1,5 +1,4 @@
-﻿using System;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -51,8 +50,11 @@ namespace GTerm.Extensions
             {
                 if (!string.IsNullOrEmpty(iconFilePath))
                 {
-                    System.Drawing.Icon icon = System.Drawing.Icon.ExtractAssociatedIcon(iconFilePath);
-                    SetWindowIcon(icon);
+                    System.Drawing.Icon? icon = System.Drawing.Icon.ExtractAssociatedIcon(iconFilePath);
+                    if (icon != null)
+                    {
+                        SetWindowIcon(icon);
+                    }
                 }
             }
         }
@@ -80,7 +82,7 @@ namespace GTerm.Extensions
         /// </summary>
         /// <param name="handle">The process handle.</param>
         /// <returns>An instance of the Process class.</returns>
-        public static Process GetParentProcess(IntPtr handle)
+        public static Process? GetParentProcess(IntPtr handle)
         {
             ParentProcessUtilities pbi = new ParentProcessUtilities();
             int status = NtQueryInformationProcess(handle, 0, ref pbi, Marshal.SizeOf(pbi), out int returnLength);
