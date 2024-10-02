@@ -1,13 +1,12 @@
 # GTerm
 Garry's Mod external console software.
 
-![screen1](https://cdn.discordapp.com/attachments/296410226742263809/924415240949596240/unknown.png)
 ![screen2](https://i.imgur.com/N0VEKPM.png)
 
 ## Installation
 - Download the latest [release](https://github.com/Earu/GTerm/releases)
-- Extract `GTerm.zip` wherever you feel is most suited
-- Launch GTerm.exe whenever Garry's Mod is running
+- Launch gterm.exe (or gterm64.exe) whenever Garry's Mod is running
+- Restart Garry's Mod to complete the installation
 - Enjoy
 
 ## In case GTerm does NOT detect your Garry's Mod installation
@@ -18,4 +17,4 @@ Garry's Mod external console software.
 - At the end of the file add `require("xconsole")`
 - Save
 - Restart Garry's Mod
-- Enjoy.
+- Voila!
