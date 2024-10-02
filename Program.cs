@@ -1,14 +1,8 @@
 ﻿using GTerm.Extensions;
 using Spectre.Console;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace GTerm
 {
@@ -23,15 +17,15 @@ namespace GTerm
                                             
 ";
 
-        private static readonly object Locker = new object();
-        private static readonly LogListener Listener = new LogListener();
-        private static readonly StringBuilder LogBuffer = new StringBuilder();
-        private static readonly StringBuilder MarkupBuffer = new StringBuilder();
-        private static readonly StringBuilder InputBuffer = new StringBuilder();
-        private static readonly Thread UserInputThread = new Thread(ProcessUserInput);
+        private static readonly object Locker = new();
+        private static readonly LogListener Listener = new();
+        private static readonly StringBuilder LogBuffer = new();
+        private static readonly StringBuilder MarkupBuffer = new();
+        private static readonly StringBuilder InputBuffer = new();
+        private static readonly Thread UserInputThread = new(ProcessUserInput);
 
         private static string ArchivePath = string.Empty;
-        private static Config Config = null;
+        private static Config Config = new();
 
         static void Main(string[] args)
         {
@@ -50,8 +44,8 @@ namespace GTerm
 
             Config = new Config(args);
 
-            Process parent = curProc.GetParent();
-            if (parent?.MainModule.ModuleName == "gmod.exe")
+            Process? parent = curProc.GetParent();
+            if (parent?.MainModule?.ModuleName == "gmod.exe")
             {
                 LocalLogger.WriteLine("Started from Gmod!");
                 Config.StartAsGmod = false; // this cannot be true if gmod already runs GTerm as a child process
@@ -76,14 +70,17 @@ namespace GTerm
                 }
             }
 
-            string processPath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
-            ArchivePath = Path.Combine(processPath, "Archives");
-            if (Config.ArchiveLogs)
+            string? processPath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
+            if (processPath != null)
             {
-                if (!Directory.Exists(ArchivePath))
+                ArchivePath = Path.Combine(processPath, "Archives");
+                if (Config.ArchiveLogs)
                 {
-                    LocalLogger.WriteLine("Archives directory was not found, creating it at: ", ArchivePath);
-                    Directory.CreateDirectory(ArchivePath);
+                    if (!Directory.Exists(ArchivePath))
+                    {
+                        LocalLogger.WriteLine("Archives directory was not found, creating it at: ", ArchivePath);
+                        Directory.CreateDirectory(ArchivePath);
+                    }
                 }
             }
 
@@ -173,7 +170,7 @@ namespace GTerm
 
                             if (string.IsNullOrWhiteSpace(input.Trim())) continue;
 
-                            if (input.Trim().ToLower() == "clear")
+                            if (input.Trim().Equals("clear", StringComparison.CurrentCultureIgnoreCase))
                                 Console.Clear();
 
                             _ = Listener.WriteMessage(input);
@@ -211,9 +208,7 @@ namespace GTerm
             }
         }
 
-        private static void ShowWaitingConnection()
-        {
-            _ = AnsiConsole.Status()
+        private static void ShowWaitingConnection() => AnsiConsole.Status()
              .AutoRefresh(false)
              .Spinner(Spinner.Known.Aesthetic)
              .SpinnerStyle(Style.Parse("red bold"))
@@ -231,7 +226,6 @@ namespace GTerm
                      }
                  }
              });
-        }
 
         private static void OnError(object sender, ErrorEventArgs e)
         {
@@ -250,6 +244,8 @@ namespace GTerm
 
         private static bool ShouldExcludeLog(string log)
         {
+            if (Config == null) return false;
+
             foreach (Regex pattern in Config.ExclusionPatterns)
             {
                 if (pattern.IsMatch(log)) return true;
@@ -274,7 +270,7 @@ namespace GTerm
                         LogBuffer.Append($"{timeStamp} | ");
                     }
 
-                    string chunk = msg.Substring(0, newLineIndex) + '\n';
+                    string chunk = string.Concat(msg.AsSpan(0, newLineIndex), "\n");
                     string nextChunk = msg.Length > newLineIndex + 1 ? msg.Substring(chunk.Length) : string.Empty;
 
                     LogBuffer.Append(chunk);
@@ -286,7 +282,7 @@ namespace GTerm
                     MarkupBuffer.Clear();
                     LogBuffer.Clear();
 
-                    string logChunk = log.IndexOf("|") != -1 ? string.Join("|", log.Split('|').Skip(1).ToArray()) : log; // there should always be 1
+                    string logChunk = log.Contains('|', StringComparison.CurrentCulture) ? string.Join("|", log.Split('|').Skip(1).ToArray()) : log; // there should always be 1
                     if (!string.IsNullOrWhiteSpace(log))
                     {
                         if (ShouldExcludeLog(logChunk)) return;
