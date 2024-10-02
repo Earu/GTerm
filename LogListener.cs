@@ -1,11 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.IO;
+﻿using System.Drawing;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace GTerm
 {
@@ -35,17 +31,17 @@ namespace GTerm
         private readonly byte[] Buffer = new byte[BUFFER_SIZE];
         private readonly NamedPipeClientStream Pipe;
 
-        internal event EventHandler OnConnected;
-        internal event EventHandler OnDisconnected;
-        internal event ErrorEventHandler OnError;
-        internal event LogEventHandler OnLog;
+        internal event EventHandler? OnConnected;
+        internal event EventHandler? OnDisconnected;
+        internal event ErrorEventHandler? OnError;
+        internal event LogEventHandler? OnLog;
 
         internal LogListener()
         {
             this.Pipe = new NamedPipeClientStream(
                 ".",
                 "garrysmod_console",
-                PipeAccessRights.Read | PipeAccessRights.Write,
+                PipeDirection.InOut,
                 PipeOptions.Asynchronous,
                 TokenImpersonationLevel.Anonymous,
                 HandleInheritability.None
@@ -64,10 +60,10 @@ namespace GTerm
             this.IsConnected = connected;
         }
 
-        private string ReadString(BinaryReader reader)
+        private static string ReadString(BinaryReader reader)
         {
-            List<byte> list = new List<byte>();
-            byte ch = 0;
+            List<byte> list = [];
+            byte ch;
             while ((ch = reader.ReadByte()) != 0)
                 list.Add(ch);
 
@@ -89,14 +85,14 @@ namespace GTerm
                     {
                         try
                         {
-                            int read = await this.Pipe.ReadAsync(this.Buffer, 0, BUFFER_SIZE);
+                            int read = await this.Pipe.ReadAsync(this.Buffer.AsMemory(0, BUFFER_SIZE));
                             if (read == 0) continue;
 
-                            using (BinaryReader reader = new BinaryReader(new MemoryStream(this.Buffer, 0, read)))
+                            using (BinaryReader reader = new(new MemoryStream(this.Buffer, 0, read)))
                             {
                                 int type = reader.ReadInt32();
                                 int level = reader.ReadInt32();
-                                string group = this.ReadString(reader);
+                                string group = ReadString(reader);
                                 Color color = Color.FromArgb(
                                     reader.ReadByte(),
                                     reader.ReadByte(),
@@ -105,7 +101,7 @@ namespace GTerm
 
                                 reader.ReadByte();
 
-                                string fullMsg = this.ReadString(reader).Replace("<NEWLINE>", "\n");
+                                string fullMsg = ReadString(reader).Replace("<NEWLINE>", "\n");
                                 this.OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
                             }
                         }
@@ -125,10 +121,7 @@ namespace GTerm
             }
         }
 
-        internal void Start()
-        {
-            Task.Run(this.ProcessMessages);
-        }
+        internal void Start() => Task.Run(this.ProcessMessages);
 
         internal async Task WriteMessage(string input)
         {
@@ -139,7 +132,7 @@ namespace GTerm
                 input = input.Replace("\0", "");
 
                 byte[] buffer = Encoding.UTF8.GetBytes(input);
-                await this.Pipe.WriteAsync(buffer, 0, buffer.Length);
+                await this.Pipe.WriteAsync(buffer);
             }
             catch (Exception ex)
             {
