@@ -1,43 +1,24 @@
 ﻿using System.Drawing;
 using System.IO.Pipes;
-using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 
-namespace GTerm
+namespace GTerm.Listeners
 {
-    internal class LogEventArgs : EventArgs
-    {
-        internal LogEventArgs(int type, int lvl, string grp, Color col, string msg)
-        {
-            this.Type = type;
-            this.Level = lvl;
-            this.Group = grp;
-            this.Color = col;
-            this.Message = msg;
-        }
-
-        internal int Type { get; private set; }
-        internal int Level { get; private set; }
-        internal string Group { get; private set; }
-        internal Color Color { get; private set; }
-        internal string Message { get; set; }
-    }
-
     delegate void LogEventHandler(object sender, LogEventArgs args);
 
-    internal class LogListener
+    internal class WindowsLogListener : ILogListener
     {
         private const int BUFFER_SIZE = 8192;
         private readonly byte[] Buffer = new byte[BUFFER_SIZE];
         private readonly NamedPipeClientStream Pipe;
 
-        internal event EventHandler? OnConnected;
-        internal event EventHandler? OnDisconnected;
-        internal event ErrorEventHandler? OnError;
-        internal event LogEventHandler? OnLog;
+        public event EventHandler? OnConnected;
+        public event EventHandler? OnDisconnected;
+        public event ErrorEventHandler? OnError;
+        public event LogEventHandler? OnLog;
 
-        internal LogListener()
+        internal WindowsLogListener()
         {
             this.Pipe = new NamedPipeClientStream(
                 ".",
@@ -49,14 +30,14 @@ namespace GTerm
             );
         }
 
-        internal bool IsConnected { get; private set; }
+        public bool IsConnected { get; private set; }
 
         private void SetConnectionStatus(bool connected)
         {
             if (connected)
-                this.OnConnected?.Invoke(this, EventArgs.Empty);
+                OnConnected?.Invoke(this, EventArgs.Empty);
             else
-                this.OnDisconnected?.Invoke(this, EventArgs.Empty);
+                OnDisconnected?.Invoke(this, EventArgs.Empty);
 
             this.IsConnected = connected;
         }
@@ -78,11 +59,7 @@ namespace GTerm
                 try
                 {
                     await this.Pipe.ConnectAsync();
-
-                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-                        this.Pipe.ReadMode = PipeTransmissionMode.Message;
-                    }
-
+                    this.Pipe.ReadMode = PipeTransmissionMode.Message;
                     this.SetConnectionStatus(true);
 
                     while (this.Pipe.IsConnected)
@@ -106,12 +83,12 @@ namespace GTerm
                                 reader.ReadByte();
 
                                 string fullMsg = ReadString(reader);
-                                this.OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
+                                OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
                             }
                         }
                         catch (Exception ex)
                         {
-                            this.OnError?.Invoke(this, new ErrorEventArgs(ex));
+                            OnError?.Invoke(this, new ErrorEventArgs(ex));
                         }
                     }
 
@@ -120,14 +97,14 @@ namespace GTerm
                 catch (TimeoutException) { } // ignore that
                 catch (Exception ex)
                 {
-                    this.OnError?.Invoke(this, new ErrorEventArgs(ex));
+                    OnError?.Invoke(this, new ErrorEventArgs(ex));
                 }
             }
         }
 
-        internal void Start() => Task.Run(this.ProcessMessages);
+        public void Start() => Task.Run(this.ProcessMessages);
 
-        internal async Task WriteMessage(string input)
+        public async Task WriteMessage(string input)
         {
             if (!this.Pipe.IsConnected) return;
 
