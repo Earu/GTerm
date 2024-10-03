@@ -1,5 +1,6 @@
 ﻿using System.Drawing;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 
@@ -77,7 +78,10 @@ namespace GTerm
                 try
                 {
                     await this.Pipe.ConnectAsync();
-                    this.Pipe.ReadMode = PipeTransmissionMode.Message;
+
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+                        this.Pipe.ReadMode = PipeTransmissionMode.Message;
+                    }
 
                     this.SetConnectionStatus(true);
 
@@ -101,7 +105,7 @@ namespace GTerm
 
                                 reader.ReadByte();
 
-                                string fullMsg = ReadString(reader).Replace("<NEWLINE>", "\n");
+                                string fullMsg = ReadString(reader);
                                 this.OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
                             }
                         }
