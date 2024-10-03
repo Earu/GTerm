@@ -39,6 +39,8 @@ namespace GTerm.Extensions
 
         private static void SetWindowIcon(System.Drawing.Icon icon)
         {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
+
             IntPtr mwHandle = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
             SendMessage(mwHandle, (int)WinMessages.SETICON, 0, icon.Handle);
             SendMessage(mwHandle, (int)WinMessages.SETICON, 1, icon.Handle);
@@ -46,15 +48,14 @@ namespace GTerm.Extensions
 
         internal static void SetConsoleIcon(string iconFilePath)
         {
-            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
+            
+            if (!string.IsNullOrEmpty(iconFilePath))
             {
-                if (!string.IsNullOrEmpty(iconFilePath))
+                System.Drawing.Icon? icon = System.Drawing.Icon.ExtractAssociatedIcon(iconFilePath);
+                if (icon != null)
                 {
-                    System.Drawing.Icon? icon = System.Drawing.Icon.ExtractAssociatedIcon(iconFilePath);
-                    if (icon != null)
-                    {
-                        SetWindowIcon(icon);
-                    }
+                    SetWindowIcon(icon);
                 }
             }
         }
