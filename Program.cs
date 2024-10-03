@@ -1,4 +1,5 @@
 ﻿using GTerm.Extensions;
+using GTerm.Listeners;
 using Spectre.Console;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -19,17 +20,19 @@ namespace GTerm
 ";
 
         private static readonly object Locker = new();
-        private static readonly LogListener Listener = new();
         private static readonly StringBuilder LogBuffer = new();
         private static readonly StringBuilder MarkupBuffer = new();
         private static readonly StringBuilder InputBuffer = new();
         private static readonly Thread UserInputThread = new(ProcessUserInput);
+        private static readonly ILogListener Listener = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
+            ? new WindowsLogListener() 
+            : new UnixLogListener();
 
         private static string ArchivePath = string.Empty;
         private static Config Config = new();
 
         static void Main(string[] args)
-        {
+        { 
             LocalLogger.WriteLine("Starting up...");
 
             // prevent running it multiple times
@@ -288,7 +291,7 @@ namespace GTerm
                     LogBuffer.Clear();
 
                     string logChunk = log.Contains('|', StringComparison.CurrentCulture) ? string.Join("|", log.Split('|').Skip(1).ToArray()) : log; // there should always be 1
-                    if (!string.IsNullOrWhiteSpace(log))
+                    if (!string.IsNullOrWhiteSpace(logChunk))
                     {
                         if (ShouldExcludeLog(logChunk)) return;
 
