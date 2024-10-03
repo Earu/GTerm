@@ -1,6 +1,7 @@
 ﻿using GTerm.Extensions;
 using Spectre.Console;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -143,7 +144,8 @@ namespace GTerm
             LocalLogger.WriteLine("Setting metadata");
 
             Console.Title = "GTerm";
-            if (GmodInterop.TryGetGmodPath(out string gmodPath))
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && GmodInterop.TryGetGmodPath(out string gmodPath))
             {
                 // copy icon from the gmod exe
                 Win32Extensions.SetConsoleIcon(gmodPath);
@@ -192,8 +194,11 @@ namespace GTerm
 
                     case ConsoleKey key when gmodConsoleKeys.Contains(key):
                     case ConsoleKey.Escape:
-                        IntPtr hWndConsole = Win32Extensions.GetConsoleWindow();
-                        Win32Extensions.ShowWindow(hWndConsole, Win32Extensions.SW_MINIMIZE);
+                        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+                            IntPtr hWndConsole = Win32Extensions.GetConsoleWindow();
+                            Win32Extensions.ShowWindow(hWndConsole, Win32Extensions.SW_MINIMIZE);
+                        }
+                      
                         break;
 
                     default:
@@ -209,23 +214,23 @@ namespace GTerm
         }
 
         private static void ShowWaitingConnection() => AnsiConsole.Status()
-             .AutoRefresh(false)
-             .Spinner(Spinner.Known.Aesthetic)
-             .SpinnerStyle(Style.Parse("red bold"))
-             .StartAsync("Waiting for Garry's Mod connection...", async ctx =>
-             {
-                 while (true)
-                 {
-                     ctx.Refresh();
-                     await Task.Delay(500);
-                     if (Listener.IsConnected)
-                     {
-                         ctx.Status = "Connected";
-                         ctx.SpinnerStyle(Style.Parse("green cold"));
-                         ctx.Spinner(Spinner.Known.Star);
-                     }
-                 }
-             });
+            .AutoRefresh(false)
+            .Spinner(Spinner.Known.Aesthetic)
+            .SpinnerStyle(Style.Parse("red bold"))
+            .StartAsync("Waiting for Garry's Mod connection...", async ctx =>
+            {
+                while (true)
+                {
+                    ctx.Refresh();
+                    await Task.Delay(500);
+                    if (Listener.IsConnected)
+                    {
+                        ctx.Status = "Connected";
+                        ctx.SpinnerStyle(Style.Parse("green cold"));
+                        ctx.Spinner(Spinner.Known.Star);
+                    }
+                }
+            });
 
         private static void OnError(object sender, ErrorEventArgs e)
         {
@@ -290,7 +295,10 @@ namespace GTerm
                         int currentTopCursor = Console.CursorTop;
                         int currentLeftCursor = Console.CursorLeft;
 
-                        Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, Math.Min(Console.BufferHeight - 1, currentTopCursor + 1));
+                        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+                            Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, Math.Min(Console.BufferHeight - 1, currentTopCursor + 1));
+                        }
+                        
                         Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor);
                         Console.CursorLeft = 0;
 

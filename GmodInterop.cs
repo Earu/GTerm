@@ -2,6 +2,7 @@
 using Microsoft.Win32;
 using Spectre.Console;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using VdfParser;
 
 namespace GTerm
@@ -15,6 +16,12 @@ namespace GTerm
 
         private static bool TryGetSteamVDFPath(out string vdfPath)
         {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) 
+            {
+                vdfPath = "?";
+                return false;
+            }
+
             try
             {
                 string? steamInstallPath = Registry.GetValue(@"HKEY_CLASSES_ROOT\steamlink\Shell\Open\Command", null, null) as string;
@@ -265,25 +272,28 @@ namespace GTerm
 
             if (GmodProcess == null) return false;
 
-            // this makes sure gmod gets killed when GTerm is closed
-            handler = new Win32Extensions.ConsoleEventDelegate(ConsoleEventCallback);
-            Win32Extensions.SetConsoleCtrlHandler(handler, true);
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+                // this makes sure gmod gets killed when GTerm is closed
+                handler = new Win32Extensions.ConsoleEventDelegate(ConsoleEventCallback);
+                Win32Extensions.SetConsoleCtrlHandler(handler, true);
 
-            Win32Extensions.ShowWindow(GmodProcess.MainWindowHandle, Win32Extensions.SW_HIDE);
-            Timer visibityTimer = new(timer =>
-            {
-                if (GmodProcess.HasExited)
+                Win32Extensions.ShowWindow(GmodProcess.MainWindowHandle, Win32Extensions.SW_HIDE);
+                Timer visibityTimer = new(timer =>
                 {
-                    (timer as Timer)?.Dispose();
-                    Environment.Exit(GmodProcess.ExitCode);
-                    return;
-                }
+                    if (GmodProcess.HasExited)
+                    {
+                        (timer as Timer)?.Dispose();
+                        Environment.Exit(GmodProcess.ExitCode);
+                        return;
+                    }
 
-                if (Win32Extensions.IsWindowVisible(GmodProcess.MainWindowHandle))
-                    Win32Extensions.ShowWindow(GmodProcess.MainWindowHandle, Win32Extensions.SW_HIDE);
-            });
+                    if (Win32Extensions.IsWindowVisible(GmodProcess.MainWindowHandle))
+                        Win32Extensions.ShowWindow(GmodProcess.MainWindowHandle, Win32Extensions.SW_HIDE);
+                });
 
-            visibityTimer.Change(0, 100);
+                visibityTimer.Change(0, 100);
+            }
+
             return true;
         }
     }
