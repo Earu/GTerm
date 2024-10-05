@@ -2,6 +2,7 @@
 using Microsoft.Win32;
 using Spectre.Console;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using VdfParser;
 
@@ -68,7 +69,7 @@ namespace GTerm
                             vdfPath = Path.Join(homeDir, "/.local/share/Steam/steamapps/libraryfolders.vdf");
                         }
 
-                        return File.Exists(vdfPath));
+                        return File.Exists(vdfPath);
                     }
                 }
             }
@@ -193,7 +194,57 @@ namespace GTerm
             }
         }
 
-        internal static (bool, bool) InstallXConsole()
+        private static string GetBinaryFileName(bool isX64)
+        {
+            string moduleName = "gmsv_xconsole_";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                moduleName += (isX64 ? "win64" : "win32");
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                // that's always x64
+                moduleName += "osx64";
+            }
+            else
+            {
+                // always x64 as well
+                moduleName += "linux64";
+            }
+
+            moduleName += ".dll";
+
+            return moduleName;
+        }
+
+        private static async Task DownloadFileAsync(string url, string outputPath)
+        {
+            using (HttpClient client = new())
+            {
+                HttpResponseMessage response = await client.GetAsync(url);
+                response.EnsureSuccessStatusCode();
+
+                byte[] content = await response.Content.ReadAsByteArrayAsync();
+                await File.WriteAllBytesAsync(outputPath, content);
+            }
+        }
+
+        private static async Task<bool> InstallBinary(bool isX64, string gtermDir, string luaBinPath)
+        {
+            string moduleName = GetBinaryFileName(isX64);
+            string targetXConsoleFilePath = Path.Combine(luaBinPath, moduleName);
+            if (!File.Exists(targetXConsoleFilePath))
+            {
+                string XConsoleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/Modules/{moduleName}";
+                await DownloadFileAsync(XConsoleUrl, targetXConsoleFilePath);
+
+                return true;
+            }
+
+            return false;
+        }
+
+        internal static async Task<(bool, bool)> InstallXConsole()
         {
             bool modifiedGameFiles = false;
             bool success = false;
@@ -214,21 +265,11 @@ namespace GTerm
                     
                 string? gtermDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
                 if (gtermDir == null) return (success, modifiedGameFiles);
-
-                bool isX64 = gmodBinPath.Contains("win64", StringComparison.CurrentCulture);
-
-                string sourceXConsoleX64FilePath = Path.Combine(gtermDir, "Modules/gmsv_xconsole_win64.dll");
-                string targetXConsoleX64FilePath = Path.Combine(luaBinPath, "gmsv_xconsole_win64.dll");
-                string sourceXConsoleX86FilePath = Path.Combine(gtermDir, "Modules/gmsv_xconsole_win32.dll");
-                string targetXConsoleX86FilePath = Path.Combine(luaBinPath, "gmsv_xconsole_win32.dll");
-                if (isX64 && !File.Exists(targetXConsoleX64FilePath) && File.Exists(sourceXConsoleX64FilePath))
-                {
-                    File.Copy(sourceXConsoleX64FilePath, targetXConsoleX64FilePath);
-                    modifiedGameFiles = true;
-                }
-                else if (!isX64 && !File.Exists(targetXConsoleX86FilePath) && File.Exists(sourceXConsoleX86FilePath))
-                {
-                    File.Copy(sourceXConsoleX86FilePath, targetXConsoleX86FilePath);
+                
+                // only x64 works on linux/mac
+                bool isX64 = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || gmodBinPath.Contains("win64", StringComparison.CurrentCulture);
+                bool justInstalledBin = await InstallBinary(isX64, gtermDir, luaBinPath);
+                if (justInstalledBin) {
                     modifiedGameFiles = true;
                 }
 
