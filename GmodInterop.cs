@@ -16,15 +16,32 @@ namespace GTerm
 
         private static bool TryGetSteamVDFPath(out string vdfPath)
         {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) 
-            {
-                vdfPath = "?";
-                return false;
-            }
-
             try
             {
-                string? steamInstallPath = Registry.GetValue(@"HKEY_CLASSES_ROOT\steamlink\Shell\Open\Command", null, null) as string;
+                string? steamInstallPath = null;
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) 
+                    steamInstallPath = Registry.GetValue(@"HKEY_CLASSES_ROOT\steamlink\Shell\Open\Command", null, null) as string;
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    string? homeDir = Environment.GetEnvironmentVariable("HOME");
+                    if (homeDir != null) {
+                        steamInstallPath = Path.Join(homeDir, "/Library/Application Support/Steam/steamapps/libraryfolders.vdf");
+                    }  
+                }
+                else {
+                    string? homeDir = Environment.GetEnvironmentVariable("HOME");
+                    if (homeDir != null) {
+                        steamInstallPath = Path.Join(homeDir, "/.steam/steam/steamapps/libraryfolders.vdf");
+                        if (!File.Exists(steamInstallPath)) {
+                            steamInstallPath = Path.Join(homeDir, "/.local/share/Steam/steamapps/libraryfolders.vdf");
+                        }
+
+                        if (!File.Exists(steamInstallPath)) {
+                            steamInstallPath = null;
+                        }
+                    } 
+                }
+
                 if (string.IsNullOrWhiteSpace(steamInstallPath))
                 {
                     steamInstallPath = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
