@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build & Publish
+    name: Build
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -48,7 +48,7 @@ jobs:
         run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -o ./publish/${{ matrix.os }}/${{ matrix.arch }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-${{ matrix.arch }}
           path: ./publish/${{ matrix.os }}/${{ matrix.arch }}
