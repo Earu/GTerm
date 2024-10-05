@@ -1,4 +1,4 @@
-name: Build .NET Core Executables
+name: Build Executables
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build and publish .NET Core self-contained executables
+    name: Build & Publish
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -33,10 +33,10 @@ jobs:
             arch: x64
 
     steps:
-      - name: Checkout source code
+      - name: Checkout source cod
         uses: actions/checkout@v4
 
-      - name: Setup .NET Core SDK
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.x'  # Specify the required .NET SDK version
@@ -44,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
 
-      - name: Publish self-contained executable
+      - name: Publish executable
         run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -o ./publish/${{ matrix.os }}/${{ matrix.arch }}
 
       - name: Upload artifact
