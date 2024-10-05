@@ -9,8 +9,11 @@ namespace GTerm
             string? gtermDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
             if (gtermDir == null) return;
 
-            string outMsg = $"{DateTime.Now:hh:mm:ss} | {string.Join("\t", args.Select(x => x.ToString()))}\n";
-            File.AppendAllText(Path.Combine(gtermDir, "gterm.log"), outMsg);
+            try {
+                string outMsg = $"{DateTime.Now:hh:mm:ss} | {string.Join("\t", args.Select(x => x.ToString()))}\n";
+                File.AppendAllText(Path.Combine(gtermDir, "gterm.log"), outMsg);
+            } 
+            catch {}
         }
     }
 }

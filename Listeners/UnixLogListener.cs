@@ -6,22 +6,23 @@ namespace GTerm.Listeners
     internal class UnixLogListener : ILogListener
     {
         private const int BUFFER_SIZE = 8192;
-        private FileStream? Pipe;
 
         public event EventHandler? OnConnected;
         public event EventHandler? OnDisconnected;
         public event ErrorEventHandler? OnError;
         public event LogEventHandler? OnLog;
 
-        public bool IsConnected { get; private set; }
+        public bool IsConnected { get; private set; } = false;
 
         private void SetConnectionStatus(bool connected)
         {
-            if (connected)
-                OnConnected?.Invoke(this, EventArgs.Empty);
-            else
-                OnDisconnected?.Invoke(this, EventArgs.Empty);
-
+            if (connected != this.IsConnected) {
+                if (connected)
+                    OnConnected?.Invoke(this, EventArgs.Empty);
+                else
+                    OnDisconnected?.Invoke(this, EventArgs.Empty);
+            }
+  
             this.IsConnected = connected;
         }
 
@@ -29,36 +30,36 @@ namespace GTerm.Listeners
         {
             List<byte> list = [];
             byte ch;
-            while ((ch = reader.ReadByte()) != 0)
+            while ((ch = reader.ReadByte()) != 0) {
                 list.Add(ch);
+            }
 
-            return Encoding.UTF8.GetString(list.ToArray());
+            return Encoding.ASCII.GetString(list.ToArray());
         }
 
         private void ProcessMessage(byte[] buffer)
         {
             using (BinaryReader reader = new(new MemoryStream(buffer, 0, buffer.Length)))
             {
-                int type = reader.ReadInt32();
-                int level = reader.ReadInt32();
+                int type = reader.ReadInt32(); 
+                int level = reader.ReadInt32(); 
+
+                byte a = reader.ReadByte();
+                byte r = reader.ReadByte();
+                byte g = reader.ReadByte();
+                byte b = reader.ReadByte();
+
+                Color color = Color.FromArgb(a, r, g, b);
                 string group = ReadString(reader);
-                Color color = Color.FromArgb(
-                    reader.ReadByte(),
-                    reader.ReadByte(),
-                    reader.ReadByte()
-                );
-
-                reader.ReadByte();
-
                 string fullMsg = ReadString(reader);
+
                 OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
             }
         }
 
-
         private async Task ProcessMessages()
         {
-            byte[] eolSequence = Encoding.UTF8.GetBytes("<EOL>");
+            byte[] eolSequence = Encoding.ASCII.GetBytes("<EOL>");
 
             int eolIndex = 0;
             List<byte> dataBuffer = [];
@@ -69,14 +70,14 @@ namespace GTerm.Listeners
             {
                 try
                 {
-                    this.Pipe = new FileStream("/tmp/garrysmod_console", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+                    FileStream fs = new("/tmp/garrysmod_console", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
                     this.SetConnectionStatus(true);
 
                     while (true)
                     {
                         try
                         {
-                            bytesRead = await this.Pipe.ReadAsync(buffer);
+                            bytesRead = await fs.ReadAsync(buffer);
                             if (bytesRead == 0)
                             {
                                 await Task.Delay(50);
@@ -115,11 +116,9 @@ namespace GTerm.Listeners
                         }
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
                     this.SetConnectionStatus(false);
-
-                    OnError?.Invoke(this, new ErrorEventArgs(ex));
                 }
             }
         }
@@ -128,19 +127,7 @@ namespace GTerm.Listeners
 
         public async Task WriteMessage(string input)
         {
-            try
-            {
-                if (this.Pipe == null) return;
-
-                input = input.Replace("\0", "");
-
-                byte[] buffer = Encoding.UTF8.GetBytes(input);
-                await this.Pipe.WriteAsync(buffer);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-            }
+            Console.WriteLine("Commands are not implemented on UNIX systems.");
         }
     }
 }
