@@ -1,0 +1,56 @@
+name: Build .NET Core Executables
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build and publish .NET Core self-contained executables
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        arch: [x64, x86]
+        include:
+          # Handle Linux x64
+          - os: ubuntu-latest
+            runtime: linux-x64
+            arch: x64
+          # Handle Windows x64
+          - os: windows-latest
+            runtime: win-x64
+            arch: x64
+          # Handle Windows x86
+          - os: windows-latest
+            runtime: win-x86
+            arch: x86
+          # Handle macOS x64
+          - os: macos-latest
+            runtime: osx-x64
+            arch: x64
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET Core SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.8'  # Specify the required .NET SDK version
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Publish self-contained executable
+        run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -o ./publish/${{ matrix.os }}/${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}
+          path: ./publish/${{ matrix.os }}/${{ matrix.arch }}
