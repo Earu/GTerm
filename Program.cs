@@ -124,6 +124,7 @@ namespace GTerm
                 Console.WriteLine("Enjoy your stay!");
                 Console.Write("\n\n\n");
 
+                Console.BackgroundColor = ConsoleColor.Black;
                 Console.ForegroundColor = ConsoleColor.White;
             };
 
@@ -162,9 +163,16 @@ namespace GTerm
 
         private static void ProcessUserInput()
         {
+            Console.WriteLine(); // on UNIX this prevents a terminal deadlock
+
             List<ConsoleKey> gmodConsoleKeys = GmodInterop.GetConsoleBindings();
             while (true)
             {
+                if (!Console.KeyAvailable) {
+                    Thread.Sleep(100);
+                    continue;
+                }
+
                 ConsoleKeyInfo keyInfo = Console.ReadKey(true);
                 switch (keyInfo.Key)
                 {
@@ -224,14 +232,15 @@ namespace GTerm
             {
                 while (true)
                 {
-                    ctx.Refresh();
-                    await Task.Delay(500);
                     if (Listener.IsConnected)
                     {
                         ctx.Status = "Connected";
                         ctx.SpinnerStyle(Style.Parse("green cold"));
                         ctx.Spinner(Spinner.Known.Star);
                     }
+
+                    ctx.Refresh();
+                    await Task.Delay(500);
                 }
             });
 
@@ -279,7 +288,7 @@ namespace GTerm
                     }
 
                     string chunk = string.Concat(msg.AsSpan(0, newLineIndex), "\n");
-                    string nextChunk = msg.Length > newLineIndex + 1 ? msg.Substring(chunk.Length) : string.Empty;
+                    string nextChunk = msg.Length > newLineIndex + 1 ? msg[chunk.Length..] : string.Empty;
 
                     LogBuffer.Append(chunk);
                     MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(chunk)}[/]");
@@ -300,12 +309,14 @@ namespace GTerm
 
                         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
                             Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, Math.Min(Console.BufferHeight - 1, currentTopCursor + 1));
-                        }
                         
+                        }
+
                         Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor);
                         Console.CursorLeft = 0;
 
-                        AnsiConsole.Write(new Markup(mk));
+                        AnsiConsole.Markup(mk);
+                        Console.Out.Flush();
 
                         // this makes typing when the console is filled more stable
                         if (currentTopCursor + 1 >= Console.BufferHeight)
