@@ -1,0 +1,54 @@
+name: Build Executables
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # Handle Linux x64
+          - os: ubuntu-latest
+            runtime: linux-x64
+            arch: x64
+          # Handle Windows x64
+          - os: windows-latest
+            runtime: win-x64
+            arch: x64
+          # Handle Windows x86
+          - os: windows-latest
+            runtime: win-x86
+            arch: x86
+          # Handle macOS x64
+          - os: macos-latest
+            runtime: osx-x64
+            arch: x64
+
+    steps:
+      - name: Checkout source cod
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'  # Specify the required .NET SDK version
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Publish executable
+        run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -o ./publish/${{ matrix.os }}/${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}
+          path: ./publish/${{ matrix.os }}/${{ matrix.arch }}
