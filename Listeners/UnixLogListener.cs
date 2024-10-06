@@ -127,7 +127,8 @@ namespace GTerm.Listeners
 
         public async Task WriteMessage(string input)
         {
-            Console.WriteLine("Commands are not implemented on UNIX systems.");
+            input += "<EOL>";
+            await File.WriteAllTextAsync("/tmp/garrysmod_console_in", input);
         }
     }
 }
