@@ -41,16 +41,15 @@ namespace GTerm.Listeners
         {
             using (BinaryReader reader = new(new MemoryStream(buffer, 0, buffer.Length)))
             {
-                int type = reader.ReadInt32(); 
-                int level = reader.ReadInt32(); 
+                int type = reader.ReadInt32();
+                int level = reader.ReadInt32();
+                string group = ReadString(reader);    
+                int r = reader.ReadByte();
+                int g = reader.ReadByte();
+                int b = reader.ReadByte();
+                int a = reader.ReadByte();
 
-                byte a = reader.ReadByte();
-                byte r = reader.ReadByte();
-                byte g = reader.ReadByte();
-                byte b = reader.ReadByte();
-
-                Color color = Color.FromArgb(a, r, g, b);
-                string group = ReadString(reader);
+                Color color = Color.FromArgb(a, r, g, b);     
                 string fullMsg = ReadString(reader);
 
                 OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
@@ -59,7 +58,7 @@ namespace GTerm.Listeners
 
         private async Task ProcessMessages()
         {
-            byte[] eolSequence = Encoding.ASCII.GetBytes("<EOL>");
+            byte[] eolSequence = Encoding.ASCII.GetBytes("<EOL>\0");
 
             int eolIndex = 0;
             List<byte> dataBuffer = [];
@@ -70,7 +69,7 @@ namespace GTerm.Listeners
             {
                 try
                 {
-                    FileStream fs = new("/tmp/garrysmod_console", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+                    FileStream fs = new("/tmp/garrysmod_console", FileMode.Open, FileAccess.Read, FileShare.Read);
                     this.SetConnectionStatus(true);
 
                     while (true)
