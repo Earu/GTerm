@@ -1,4 +1,4 @@
-﻿using GTerm.Extensions;
+using GTerm.Extensions;
 using Microsoft.Win32;
 using Spectre.Console;
 using System.Diagnostics;
@@ -67,6 +67,11 @@ namespace GTerm
                         if (!File.Exists(vdfPath)) 
                         {
                             vdfPath = Path.Join(homeDir, "/.local/share/Steam/steamapps/libraryfolders.vdf");
+                            if (!File.Exists(vdfPath)) 
+                            {
+                                // flatpak
+                                vdfPath = Path.Join(homeDir, "/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/libraryfolders.vdf");
+                            }
                         }
 
                         return File.Exists(vdfPath);
@@ -244,6 +249,39 @@ namespace GTerm
             return false;
         }
 
+        private static bool IsGmodX64(string gmodBinPath)
+        {
+            // Base assumption in case it fails later (windows can do x86 and x64, linux/mac only x64)
+            bool isX64 = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || gmodBinPath.Contains("win64", StringComparison.CurrentCulture);
+
+            // Fetch the gmod manifest to make a safer assumption of the current branch
+            if (TryGetSteamVDFPath(out string vdfPath)) 
+            {
+                try 
+                {
+                    string? vdfDirPath = Path.GetDirectoryName(vdfPath);
+                    if (vdfDirPath != null) 
+                    {
+                        string gmodManifiestPath = Path.Join(vdfDirPath, "appmanifest_4000.acf");
+                        if (File.Exists(gmodManifiestPath)) 
+                        {
+                            FileStream gmodManifestFile = File.OpenRead(gmodManifiestPath);
+                            VdfDeserializer deserializer = new();
+                            dynamic result = deserializer.Deserialize(gmodManifestFile);
+
+                            isX64 = result?.AppState?.UserConfig?.BetaKey == "x86-64";
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Could not find Garry's Mod manifest, assuming branch\n" + ex.Message);
+                }
+            }
+
+            return isX64;
+        }
+
         internal static async Task<(bool, bool)> InstallXConsole()
         {
             bool modifiedGameFiles = false;
@@ -266,8 +304,7 @@ namespace GTerm
                 string? gtermDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
                 if (gtermDir == null) return (success, modifiedGameFiles);
                 
-                // only x64 works on linux/mac
-                bool isX64 = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || gmodBinPath.Contains("win64", StringComparison.CurrentCulture);
+                bool isX64 = IsGmodX64(gmodBinPath);
                 bool justInstalledBin = await InstallBinary(isX64, gtermDir, luaBinPath);
                 if (justInstalledBin) {
                     modifiedGameFiles = true;
