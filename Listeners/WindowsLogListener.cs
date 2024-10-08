@@ -74,13 +74,12 @@ namespace GTerm.Listeners
                                 int type = reader.ReadInt32();
                                 int level = reader.ReadInt32();
                                 string group = ReadString(reader);
-                                Color color = Color.FromArgb(
-                                    reader.ReadByte(),
-                                    reader.ReadByte(),
-                                    reader.ReadByte()
-                                );
+                                int r = reader.ReadByte();
+                                int g = reader.ReadByte();
+                                int b = reader.ReadByte();
+                                int a = reader.ReadByte();
 
-                                reader.ReadByte();
+                                Color color = Color.FromArgb(a, r, g, b);     
 
                                 string fullMsg = ReadString(reader);
                                 OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
