@@ -10,6 +10,8 @@ Garry's Mod external console software.
 - Enjoy
 
 ## In case GTerm does NOT detect your Garry's Mod installation
+**IF YOU RUN GTERM ON A SERVER THIS IS YOUR CASE!!**
+
 - Download both `gmsv_xconsole_win32.dll` & `gmsv_xconsole_win64.dll` (you can find them here: https://github.com/Earu/GTerm/tree/master/Modules).
 - Place both dll files in `GarrysMod/garrysmod/lua/bin` (if the `bin` folder doesnt exist, create it).
 - Go to `GarrysMod/garrysmod/lua/menu`
