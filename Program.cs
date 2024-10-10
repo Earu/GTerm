@@ -24,12 +24,14 @@ namespace GTerm
         private static readonly StringBuilder MarkupBuffer = new();
         private static readonly StringBuilder InputBuffer = new();
         private static readonly Thread UserInputThread = new(ProcessUserInput);
+
         private static readonly ILogListener Listener = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
             ? new WindowsLogListener() 
             : new UnixLogListener();
 
         private static string ArchivePath = string.Empty;
         private static Config Config = new();
+        private static WebSocketAPI? API;
 
         static void Main(string[] args)
         { 
@@ -88,7 +90,7 @@ namespace GTerm
                 }
             }
 
-            GmodInterop.InstallXConsole(); // try to install xconsole
+            Task.Run(GmodInterop.InstallXConsole); // try to install xconsole
 
             if (Config.StartAsGmod)
             {
@@ -139,6 +141,12 @@ namespace GTerm
             Listener.Start();
 
             UserInputThread.Start();
+
+            if (Config.API)
+            {
+                API = new WebSocketAPI(Listener, Config.APIPort, Config.APISecret);
+                Task.Run(API.Start);
+            }
         }
 
         private static void SetMetadata()
@@ -275,7 +283,8 @@ namespace GTerm
         {
             lock (Locker)
             {
-                string timeStamp = DateTime.Now.ToString("hh:mm:ss");
+                DateTime now = DateTime.Now;
+                string timeStamp = now.ToString("hh:mm:ss");
                 System.Drawing.Color col = IsBlack(args.Color) ? System.Drawing.Color.White : args.Color;
                 string msg = args.Message;
                 int newLineIndex = msg.IndexOf('\n');
@@ -285,6 +294,7 @@ namespace GTerm
                     {
                         MarkupBuffer.Append($"[#ffaf00]{timeStamp}[/] | ");
                         LogBuffer.Append($"{timeStamp} | ");
+                        API?.StartData(now);
                     }
 
                     string chunk = string.Concat(msg.AsSpan(0, newLineIndex), "\n");
@@ -292,12 +302,14 @@ namespace GTerm
 
                     LogBuffer.Append(chunk);
                     MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(chunk)}[/]");
+                    API?.AppendData(col, chunk);
 
                     string mk = MarkupBuffer.ToString();
                     string log = LogBuffer.ToString();
 
                     MarkupBuffer.Clear();
                     LogBuffer.Clear();
+                    API?.FinishDataAsync();
 
                     string logChunk = log.Contains('|', StringComparison.CurrentCulture) ? string.Join("|", log.Split('|').Skip(1).ToArray()) : log; // there should always be 1
                     if (!string.IsNullOrWhiteSpace(logChunk))
@@ -344,12 +356,14 @@ namespace GTerm
                 {
                     MarkupBuffer.Append($"[#ffaf00]{timeStamp}[/] | ");
                     LogBuffer.Append($"{timeStamp} | ");
+                    API?.StartData(now);
                 }
 
                 if (msg.Length > 0)
                 {
                     LogBuffer.Append(msg);
                     MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(msg)}[/]");
+                    API?.AppendData(col, msg);
                 }
             }
         }

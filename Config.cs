@@ -11,6 +11,9 @@ namespace GTerm
         public bool ArchiveLogs { get; set; }
         public bool MonitorGmod { get; set; }
         public bool StartAsGmod { get; set; }
+        public bool? API { get; set; }
+        public string? APISecret { get; set; }
+        public int? APIPort { get; set; }
     }
 
     internal class Config
@@ -19,6 +22,9 @@ namespace GTerm
         internal bool ArchiveLogs { get; set; } = true;
         internal bool MonitorGmod { get; set; } = true;
         internal bool StartAsGmod { get; set; } = false;
+        internal bool API { get; set; } = false;
+        internal string? APISecret { get; set; }
+        internal int APIPort { get; set; }
 
         internal Config() { }
 
@@ -55,6 +61,9 @@ namespace GTerm
             this.ArchiveLogs = cfg.ArchiveLogs;
             this.MonitorGmod = cfg.MonitorGmod;
             this.StartAsGmod = cfg.StartAsGmod;
+            this.API = cfg.API ?? false;
+            this.APIPort = cfg.APIPort ?? 27512;
+            this.APISecret = cfg.APISecret;
 
             if (cfg.ExclusionPatterns != null)
             {
@@ -132,7 +141,7 @@ namespace GTerm
                 {
                     case Type t when t == typeof(bool):
                         bool value = true;
-                        if (option.Value.Count > 0 && int.TryParse(option.Value.Last(), out int parsedValue))
+                        if (option.Value.Count > 0 && int.TryParse(string.Join(' ', option.Value), out int parsedValue))
                             value = parsedValue > 0;
 
                         prop.SetValue(curCfg, value);
@@ -140,6 +149,17 @@ namespace GTerm
 
                     case Type t when t == typeof(string[]):
                         prop.SetValue(curCfg, option.Value.ToArray());
+                        break;
+
+                    case Type t when t == typeof(int):
+                        int number = 0;
+                        if (option.Value.Count > 0 && int.TryParse(string.Join(' ', option.Value), out int parsedNumber))
+                            number = parsedNumber;
+                        prop.SetValue(curCfg, number);
+                        break;
+
+                    case Type t when t == typeof(string):
+                        prop.SetValue(curCfg, string.Join(' ', option.Value));
                         break;
 
                     default:
