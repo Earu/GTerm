@@ -2,5 +2,8 @@
   "ExclusionPatterns": [],
   "ArchiveLogs": true,
   "MonitorGmod": true,
-  "StartAsGmod": false
+  "StartAsGmod": false,
+  "API": false,
+  "APIPort": 27512,
+  "APISecret": "cool_secret"
 }
