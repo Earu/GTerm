@@ -2,7 +2,6 @@ using GTerm.Extensions;
 using Microsoft.Win32;
 using Spectre.Console;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
 using VdfParser;
 
@@ -101,6 +100,7 @@ namespace GTerm
                             dynamic result = deserializer.Deserialize(gmodManifestFile);
 
                             isX64 = result?.AppState?.UserConfig?.BetaKey == "x86-64";
+                            return true;
                         }
                     }
                 }
@@ -207,7 +207,7 @@ namespace GTerm
                     }
                 }
 
-                LocalLogger.WriteLine("Could not find Gmod directory: Maybe it's not installed?");
+                LocalLogger.WriteLine("Could not find Gmod directory: Maybe it's not installed or installed via steamcmd?");
                 gmodPath = string.Empty;
                 return false;
             }
@@ -233,8 +233,7 @@ namespace GTerm
             }
             else
             {
-                // always x64 as well
-                moduleName += "linux64";
+                moduleName += isX64 ? "linux64" : "linux";
             }
 
             moduleName += ".dll";
@@ -270,7 +269,9 @@ namespace GTerm
         private static bool IsGmodX64(string gmodBinPath)
         {
             // Base assumption in case it fails later (windows can do x86 and x64, linux/mac only x64)
-            bool isX64 = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || gmodBinPath.Contains("win64", StringComparison.CurrentCulture);
+            bool isX64 = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) 
+                || gmodBinPath.Contains("win64", StringComparison.CurrentCulture)
+                || gmodBinPath.Contains("linux64", StringComparison.CurrentCulture);
 
             // Fetch the gmod manifest to make a safer assumption of the current branch
             if (TryGetMountedBeta(out bool isBetaX64))
