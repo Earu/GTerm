@@ -195,6 +195,9 @@ namespace GTerm
                                 Console.Clear();
 
                             _ = Listener.WriteMessage(input);
+
+                            Console.CursorLeft = 0;
+                            Console.Write(new string(' ', Console.BufferWidth - 1));
                         }
                         break;
 
