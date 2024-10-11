@@ -173,7 +173,6 @@ namespace GTerm
         {
             Console.WriteLine(); // on UNIX this prevents a terminal deadlock
 
-            List<ConsoleKey> gmodConsoleKeys = GmodInterop.GetConsoleBindings();
             while (true)
             {
                 if (!Console.KeyAvailable) {
@@ -214,7 +213,6 @@ namespace GTerm
 
                         break;
 
-                    case ConsoleKey key when gmodConsoleKeys.Contains(key):
                     case ConsoleKey.Escape:
                         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
                             IntPtr hWndConsole = Win32Extensions.GetConsoleWindow();
