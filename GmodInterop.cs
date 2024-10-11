@@ -84,6 +84,36 @@ namespace GTerm
             return false;
         }
 
+        private static bool TryGetMountedBeta(out bool isX64)
+        {
+            if (TryGetSteamVDFPath(out string vdfPath))
+            {
+                try
+                {
+                    string? vdfDirPath = Path.GetDirectoryName(vdfPath);
+                    if (vdfDirPath != null)
+                    {
+                        string gmodManifiestPath = Path.Join(vdfDirPath, "appmanifest_4000.acf");
+                        if (File.Exists(gmodManifiestPath))
+                        {
+                            FileStream gmodManifestFile = File.OpenRead(gmodManifiestPath);
+                            VdfDeserializer deserializer = new();
+                            dynamic result = deserializer.Deserialize(gmodManifestFile);
+
+                            isX64 = result?.AppState?.UserConfig?.BetaKey == "x86-64";
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Could not find Garry's Mod manifest, assuming branch\n" + ex.Message);
+                }
+            }
+
+            isX64 = false;
+            return false;
+        }
+
         internal static bool TryGetGmodPath(out string gmodPath, bool toBin = true)
         {
             try
@@ -127,14 +157,39 @@ namespace GTerm
 
                             if (toBin)
                             {
-                                string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
-                                string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
-                                if (File.Exists(gmodPathX64))
-                                    gmodPath = gmodPathX64;
-                                else if (File.Exists(gmodPathX86))
-                                    gmodPath = gmodPathX86;
+                                bool gotBeta = TryGetMountedBeta(out bool isX64);
+                                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                                {
+                                    if (gotBeta)
+                                    {
+                                        gmodPath = isX64 
+                                            ? Path.Combine(gmodPath, "bin/win64/gmod.exe") 
+                                            : Path.Combine(gmodPath, "bin/gmod.exe");
+                                    }
+                                    else
+                                    {
+                                        // get x64 bin path in priority
+                                        string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
+                                        string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
+                                        if (File.Exists(gmodPathX64))
+                                            gmodPath = gmodPathX64;
+                                        else if (File.Exists(gmodPathX86))
+                                            gmodPath = gmodPathX86;
+                                    }
+
+                                    if (!File.Exists(gmodPath))
+                                        gmodPath = Path.Combine(gmodPath, "hl2.exe");
+                                } 
+                                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                                {
+                                    gmodPath = Path.Combine(gmodPath, "hl2_osx");
+                                }
                                 else
-                                    gmodPath = Path.Combine(gmodPath, "hl2.exe");
+                                {
+                                    // TODO: Figure out where and what the linux bin is called
+                                    // also figure out how to handle srcds
+                                    gmodPath = Path.Combine(gmodPath, "hl2");
+                                }
                             }
 
                             return true;
@@ -151,51 +206,6 @@ namespace GTerm
                 LocalLogger.WriteLine("Could not find Gmod directory: ", ex.Message);
                 gmodPath = string.Empty;
                 return false;
-            }
-        }
-
-        /// <summary>
-        /// Tries to parse the current user gmod console keys, and use them further for minimizing GTerm
-        /// </summary>
-        /// <returns>Found console keys</returns>
-        internal static List<ConsoleKey> GetConsoleBindings()
-        {
-            try
-            {
-                List<ConsoleKey> consoleTriggerKeys = [];
-
-                if (!TryGetGmodPath(out string gmodBinPath)) return consoleTriggerKeys;
-
-                int? index = gmodBinPath.IndexOf("GarrysMod");
-                if (index == null || index == -1) return consoleTriggerKeys;
-
-                string baseGmodPath = gmodBinPath.Substring(0, index.Value + "GarrysMod".Length);
-                string cfgPath = Path.Combine(baseGmodPath, "garrysmod/cfg/config.cfg");
-                if (!File.Exists(cfgPath)) return consoleTriggerKeys;
-
-                string[] cfgLines = File.ReadAllLines(cfgPath);
-                foreach (string cfgLine in cfgLines)
-                {
-                    string[] lineChunks = cfgLine.Split(' ')
-                        .Where(s => !string.IsNullOrWhiteSpace(s))
-                        .Select(s => s.Replace("\"", string.Empty).Trim())
-                        .ToArray();
-
-                    if (lineChunks.Length >= 3 && lineChunks[0] == "bind" && lineChunks[2].Contains("toggleconsole", StringComparison.CurrentCulture))
-                    {
-                        string keyName = lineChunks[1].ToUpper()[1] + lineChunks[1].Substring(1).ToLower();
-                        if (Enum.TryParse(keyName, out ConsoleKey key))
-                            consoleTriggerKeys.Add(key);
-                    }
-                }
-
-                LocalLogger.WriteLine("Found console bindings: ", string.Join("\t", consoleTriggerKeys.Select(t => t.ToString())));
-                return consoleTriggerKeys;
-            }
-            catch (Exception ex)
-            {
-                LocalLogger.WriteLine("Could not get Gmod console bindings: ", ex.Message);
-                return [];
             }
         }
 
@@ -255,29 +265,8 @@ namespace GTerm
             bool isX64 = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || gmodBinPath.Contains("win64", StringComparison.CurrentCulture);
 
             // Fetch the gmod manifest to make a safer assumption of the current branch
-            if (TryGetSteamVDFPath(out string vdfPath)) 
-            {
-                try 
-                {
-                    string? vdfDirPath = Path.GetDirectoryName(vdfPath);
-                    if (vdfDirPath != null) 
-                    {
-                        string gmodManifiestPath = Path.Join(vdfDirPath, "appmanifest_4000.acf");
-                        if (File.Exists(gmodManifiestPath)) 
-                        {
-                            FileStream gmodManifestFile = File.OpenRead(gmodManifiestPath);
-                            VdfDeserializer deserializer = new();
-                            dynamic result = deserializer.Deserialize(gmodManifestFile);
-
-                            isX64 = result?.AppState?.UserConfig?.BetaKey == "x86-64";
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Could not find Garry's Mod manifest, assuming branch\n" + ex.Message);
-                }
-            }
+            if (TryGetMountedBeta(out bool isBetaX64))
+                isX64 = isBetaX64;
 
             return isX64;
         }
