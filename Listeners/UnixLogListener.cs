@@ -77,7 +77,7 @@ namespace GTerm.Listeners
                         try
                         {
                             bytesRead = await fs.ReadAsync(buffer);
-                            if (bytesRead == 0)
+                            if (bytesRead <= 0)
                             {
                                 await Task.Delay(50);
                                 continue;
