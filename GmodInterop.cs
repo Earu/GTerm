@@ -134,7 +134,7 @@ namespace GTerm
                         }
 
                         int index = path.IndexOf("GarrysMod/bin");
-                        gmodPath = Path.Combine(path.Substring(0, index), "GarrysMod");
+                        gmodPath = Path.Combine(path[..index], "GarrysMod");
                         return true;
                     }
                 }
@@ -157,20 +157,21 @@ namespace GTerm
 
                             if (toBin)
                             {
+                                string gmodPathDir = gmodPath;
                                 bool gotBeta = TryGetMountedBeta(out bool isX64);
                                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                                 {
                                     if (gotBeta)
                                     {
                                         gmodPath = isX64 
-                                            ? Path.Combine(gmodPath, "bin/win64/gmod.exe") 
-                                            : Path.Combine(gmodPath, "bin/gmod.exe");
+                                            ? Path.Combine(gmodPathDir, "bin/win64/gmod.exe") 
+                                            : Path.Combine(gmodPathDir, "bin/gmod.exe");
                                     }
                                     else
                                     {
                                         // get x64 bin path in priority
-                                        string gmodPathX64 = Path.Combine(gmodPath, "bin/win64/gmod.exe");
-                                        string gmodPathX86 = Path.Combine(gmodPath, "bin/gmod.exe");
+                                        string gmodPathX64 = Path.Combine(gmodPathDir, "bin/win64/gmod.exe");
+                                        string gmodPathX86 = Path.Combine(gmodPathDir, "bin/gmod.exe");
                                         if (File.Exists(gmodPathX64))
                                             gmodPath = gmodPathX64;
                                         else if (File.Exists(gmodPathX86))
@@ -178,17 +179,26 @@ namespace GTerm
                                     }
 
                                     if (!File.Exists(gmodPath))
-                                        gmodPath = Path.Combine(gmodPath, "hl2.exe");
+                                        gmodPath = Path.Combine(gmodPathDir, "hl2.exe");
                                 } 
                                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                                 {
-                                    gmodPath = Path.Combine(gmodPath, "hl2_osx");
+                                    gmodPath = Path.Combine(gmodPathDir, "hl2_osx");
                                 }
                                 else
                                 {
-                                    // TODO: Figure out where and what the linux bin is called
-                                    // also figure out how to handle srcds
-                                    gmodPath = Path.Combine(gmodPath, "hl2");
+                                    if (gotBeta) {
+                                        gmodPath = isX64 ? Path.Combine(gmodPathDir, "linux64/gmod") : Path.Combine(gmodPathDir, "hl2_linux");
+
+                                        if (!File.Exists(gmodPath))
+                                            gmodPath = isX64 ? Path.Combine(gmodPathDir, "linux64/srcds") : Path.Combine(gmodPathDir, "srcds");
+                                    }
+                                    else
+                                    {
+                                        gmodPath = Path.Combine(gmodPathDir, "hl2_linux");
+                                        if (!File.Exists(gmodPath))
+                                            gmodPath = Path.Combine(gmodPathDir, "srcds");
+                                    }    
                                 }
                             }
 
@@ -234,17 +244,15 @@ namespace GTerm
 
         private static async Task DownloadFileAsync(string url, string outputPath)
         {
-            using (HttpClient client = new())
-            {
-                HttpResponseMessage response = await client.GetAsync(url);
-                response.EnsureSuccessStatusCode();
+            using HttpClient client = new();
+            HttpResponseMessage response = await client.GetAsync(url);
+            response.EnsureSuccessStatusCode();
 
-                byte[] content = await response.Content.ReadAsByteArrayAsync();
-                await File.WriteAllBytesAsync(outputPath, content);
-            }
+            byte[] content = await response.Content.ReadAsByteArrayAsync();
+            await File.WriteAllBytesAsync(outputPath, content);
         }
 
-        private static async Task<bool> InstallBinary(bool isX64, string gtermDir, string luaBinPath)
+        private static async Task<bool> InstallBinary(bool isX64, string luaBinPath)
         {
             string moduleName = GetBinaryFileName(isX64);
             string targetXConsoleFilePath = Path.Combine(luaBinPath, moduleName);
@@ -289,12 +297,9 @@ namespace GTerm
                     Directory.CreateDirectory(luaBinPath);
                     modifiedGameFiles = true;
                 }
-                    
-                string? gtermDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
-                if (gtermDir == null) return (success, modifiedGameFiles);
                 
                 bool isX64 = IsGmodX64(gmodBinPath);
-                bool justInstalledBin = await InstallBinary(isX64, gtermDir, luaBinPath);
+                bool justInstalledBin = await InstallBinary(isX64, luaBinPath);
                 if (justInstalledBin) {
                     modifiedGameFiles = true;
                 }
