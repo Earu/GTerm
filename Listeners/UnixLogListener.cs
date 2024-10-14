@@ -76,7 +76,7 @@ namespace GTerm.Listeners
                     {
                         try
                         {
-                            bytesRead = await fs.ReadAsync(buffer);
+                            bytesRead = await fs.ReadAsync(buffer.AsMemory(0, BUFFER_SIZE));
                             if (bytesRead <= 0)
                             {
                                 await Task.Delay(50);
@@ -108,6 +108,8 @@ namespace GTerm.Listeners
                                     eolIndex = 0;
                                 }
                             }
+
+                            buffer = new byte[BUFFER_SIZE];
                         }
                         catch (Exception ex)
                         {

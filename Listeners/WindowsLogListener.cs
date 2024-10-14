@@ -9,8 +9,7 @@ namespace GTerm.Listeners
 
     internal class WindowsLogListener : ILogListener
     {
-        private const int BUFFER_SIZE = 8192;
-        private readonly byte[] Buffer = new byte[BUFFER_SIZE];
+        private const int BUFFER_SIZE = 16384; // max buffer size as per xconsole Windows named pipe
         private readonly NamedPipeClientStream Pipe;
 
         public event EventHandler? OnConnected;
@@ -66,10 +65,11 @@ namespace GTerm.Listeners
                     {
                         try
                         {
-                            int read = await this.Pipe.ReadAsync(this.Buffer.AsMemory(0, BUFFER_SIZE));
+                            byte[] buffer = new byte[BUFFER_SIZE];
+                            int read = await this.Pipe.ReadAsync(buffer.AsMemory(0, BUFFER_SIZE));
                             if (read == 0) continue;
 
-                            using (BinaryReader reader = new(new MemoryStream(this.Buffer, 0, read)))
+                            using (BinaryReader reader = new(new MemoryStream(buffer, 0, read)))
                             {
                                 int type = reader.ReadInt32();
                                 int level = reader.ReadInt32();
