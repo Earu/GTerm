@@ -84,4 +84,6 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
   "MCPCollectionWindowMs": 1000
 }
 ```
+<img width="874" height="1305" alt="image" src="https://github.com/user-attachments/assets/962e21db-b6bf-4ef3-b919-d09b32117386" />
+<img width="1123" height="1207" alt="image" src="https://github.com/user-attachments/assets/42e953e6-1f37-478d-b024-e1e77e4d48eb" />
 
