@@ -25,3 +25,63 @@ Garry's Mod external console software.
 - In `GarrysMod/garrysmod/lua/menu/menu.lua` add at the bottom of the file `require("xconsole")`.
 - Restart Garry's Mod.
 - Voila!
+
+## WebSocket API
+GTerm includes a WebSocket server for console streaming and command execution.
+
+**Setup:**
+1. Enable API in `Config.json`: `"API": true`
+2. Connect WebSocket clients to `ws://localhost:27512/ws/`
+
+**Configuration Options:**
+```json
+{
+  "API": true,
+  "APIPort": 27512,
+  "APISecret": "your_secret_here"
+}
+```
+
+**Example Payloads:**
+
+Sending commands (text message):
+```
+status
+```
+
+Receiving console output (JSON):
+```json
+{
+  "Time": 1704123456,
+  "Data": [
+    {
+      "Color": { "R": 255, "G": 255, "B": 255, "A": 255 },
+      "Text": "hostname: My Server\n"
+    }
+  ]
+}
+```
+
+## MCP Server Integration
+GTerm includes an MCP (Model Context Protocol) server for AI agents such as Cursor, Warp, etc..
+
+**Setup:**
+1. Enable MCP in `Config.json`: `"MCP": true`
+2. Configure your MCP client (e.g., Cursor) to connect to `http://localhost:27513`
+
+**Available Tools:**
+- `run_gmod_command` - Execute console commands
+- `list_gmod_directory` - Browse Garry's Mod file structure
+- `read_gmod_file` - Read text files from installation
+- `execute_lua_code` - Execute CLIENT-SIDE Lua code (if you have the permissions to do it)
+- `capture_console_output` - Monitor console output for a specified duration
+
+**Configuration Options:**
+```json
+{
+  "MCP": true,
+  "MCPPort": 27513,
+  "MCPCollectionWindowMs": 1000
+}
+```
+

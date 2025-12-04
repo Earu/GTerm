@@ -14,6 +14,9 @@ namespace GTerm
         public bool? API { get; set; }
         public string? APISecret { get; set; }
         public int? APIPort { get; set; }
+        public bool? MCP { get; set; }
+        public int? MCPCollectionWindowMs { get; set; }
+        public int? MCPPort { get; set; }
     }
 
     internal class Config
@@ -25,10 +28,13 @@ namespace GTerm
         internal bool API { get; set; } = false;
         internal string? APISecret { get; set; }
         internal int APIPort { get; set; }
+        internal bool MCP { get; set; } = false;
+        internal int MCPCollectionWindowMs { get; set; } = 1000;
+        internal int MCPPort { get; set; } = 27513;
 
         internal Config() { }
 
-        internal Config(string[] args) 
+        internal Config(string[] args)
         {
             JsonConfig cfg = new();
 
@@ -64,6 +70,9 @@ namespace GTerm
             this.API = cfg.API ?? false;
             this.APIPort = cfg.APIPort ?? 27512;
             this.APISecret = cfg.APISecret;
+            this.MCP = cfg.MCP ?? false;
+            this.MCPCollectionWindowMs = cfg.MCPCollectionWindowMs ?? 1000;
+            this.MCPPort = cfg.MCPPort ?? 27513;
 
             if (cfg.ExclusionPatterns != null)
             {
@@ -77,6 +86,9 @@ namespace GTerm
             LocalLogger.WriteLine("Logs archiving: " + this.ArchiveLogs);
             LocalLogger.WriteLine("Gmod monitoring: " + this.MonitorGmod);
             LocalLogger.WriteLine("Start as Gmod: " + this.StartAsGmod);
+            LocalLogger.WriteLine("MCP: " + this.MCP);
+            LocalLogger.WriteLine("MCP Collection Window: " + this.MCPCollectionWindowMs + "ms");
+            LocalLogger.WriteLine("MCP Port: " + this.MCPPort);
             LocalLogger.WriteLine("Exclusion Patterns: \n", string.Join("\n", this.ExclusionPatterns.Select(r => r.ToString())));
         }
 
