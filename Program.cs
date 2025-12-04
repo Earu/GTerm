@@ -25,16 +25,18 @@ namespace GTerm
         private static readonly StringBuilder InputBuffer = new();
         private static readonly Thread UserInputThread = new(ProcessUserInput);
 
-        private static readonly ILogListener Listener = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
-            ? new WindowsLogListener() 
+        private static readonly ILogListener Listener = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? new WindowsLogListener()
             : new UnixLogListener();
 
         private static string ArchivePath = string.Empty;
         private static Config Config = new();
         private static WebSocketAPI? API;
+        private static CommandCollector? Collector;
+        private static MCPServer? MCP;
 
         static void Main(string[] args)
-        { 
+        {
             LocalLogger.WriteLine("Starting up...");
 
             // prevent running it multiple times
@@ -145,7 +147,14 @@ namespace GTerm
             if (Config.API)
             {
                 API = new WebSocketAPI(Listener, Config.APIPort, Config.APISecret);
-                Task.Run(API.Start);
+                Task.Run(API.StartAsync);
+            }
+
+            if (Config.MCP)
+            {
+                Collector = new CommandCollector(Listener, Config.MCPCollectionWindowMs);
+                MCP = new MCPServer(Collector, Config.MCPPort);
+                Task.Run(() => MCP.StartAsync());
             }
         }
 
@@ -218,7 +227,7 @@ namespace GTerm
                             IntPtr hWndConsole = Win32Extensions.GetConsoleWindow();
                             Win32Extensions.ShowWindow(hWndConsole, Win32Extensions.SW_MINIMIZE);
                         }
-                      
+
                         break;
 
                     default:
@@ -322,7 +331,7 @@ namespace GTerm
 
                         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
                             Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, Math.Min(Console.BufferHeight - 1, currentTopCursor + 1));
-                        
+
                         }
 
                         Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor);

@@ -5,5 +5,8 @@
   "StartAsGmod": false,
   "API": false,
   "APIPort": 27512,
-  "APISecret": "cool_secret"
+  "APISecret": "cool_secret",
+  "MCP": true,
+  "MCPCollectionWindowMs": 1000,
+  "MCPPort": 27513
 }
