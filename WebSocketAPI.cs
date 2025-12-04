@@ -51,7 +51,7 @@ namespace GTerm
             this.Secret = secret;
         }
 
-        internal async Task Start()
+        internal async Task StartAsync()
         {
             this.ShouldStop = false;
 
