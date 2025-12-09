@@ -17,6 +17,7 @@ namespace GTerm
         public bool? MCP { get; set; }
         public int? MCPCollectionWindowMs { get; set; }
         public int? MCPPort { get; set; }
+        public string? MCPSecret { get; set; }
     }
 
     internal class Config
@@ -31,6 +32,7 @@ namespace GTerm
         internal bool MCP { get; set; } = false;
         internal int MCPCollectionWindowMs { get; set; } = 1000;
         internal int MCPPort { get; set; } = 27513;
+        internal string? MCPSecret { get; set; }
 
         internal Config() { }
 
@@ -73,6 +75,7 @@ namespace GTerm
             this.MCP = cfg.MCP ?? false;
             this.MCPCollectionWindowMs = cfg.MCPCollectionWindowMs ?? 1000;
             this.MCPPort = cfg.MCPPort ?? 27513;
+            this.MCPSecret = cfg.MCPSecret;
 
             if (cfg.ExclusionPatterns != null)
             {
@@ -89,6 +92,7 @@ namespace GTerm
             LocalLogger.WriteLine("MCP: " + this.MCP);
             LocalLogger.WriteLine("MCP Collection Window: " + this.MCPCollectionWindowMs + "ms");
             LocalLogger.WriteLine("MCP Port: " + this.MCPPort);
+            LocalLogger.WriteLine("MCP Secret: " + (string.IsNullOrWhiteSpace(this.MCPSecret) ? "(none)" : "***configured***"));
             LocalLogger.WriteLine("Exclusion Patterns: \n", string.Join("\n", this.ExclusionPatterns.Select(r => r.ToString())));
         }
 

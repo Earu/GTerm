@@ -153,7 +153,7 @@ namespace GTerm
             if (Config.MCP)
             {
                 Collector = new CommandCollector(Listener, Config.MCPCollectionWindowMs);
-                MCP = new MCPServer(Collector, Config.MCPPort);
+                MCP = new MCPServer(Collector, Config.MCPPort, Config.MCPSecret);
                 Task.Run(() => MCP.StartAsync());
             }
         }

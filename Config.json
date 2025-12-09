@@ -8,5 +8,6 @@
   "APISecret": "cool_secret",
   "MCP": true,
   "MCPCollectionWindowMs": 1000,
-  "MCPPort": 27513
+  "MCPPort": 27513,
+  "MCPSecret": null
 }
