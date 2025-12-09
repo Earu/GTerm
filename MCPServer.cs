@@ -10,13 +10,15 @@ namespace GTerm
         private readonly CommandCollector Collector;
         private readonly LuaExecutor LuaExecutor;
         private readonly int Port;
+        private readonly string? Secret;
         private bool IsRunning = false;
 
-        internal MCPServer(CommandCollector collector, int port)
+        internal MCPServer(CommandCollector collector, int port, string? secret)
         {
             this.Collector = collector;
             this.LuaExecutor = new LuaExecutor(collector);
             this.Port = port;
+            this.Secret = secret;
         }
 
         public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -81,6 +83,22 @@ namespace GTerm
                     response.StatusCode = 200;
                     response.Close();
                     return;
+                }
+
+                // Validate secret if configured
+                if (!string.IsNullOrWhiteSpace(this.Secret))
+                {
+                    string? providedSecret = request.QueryString["secret"];
+                    if (providedSecret != this.Secret)
+                    {
+                        LocalLogger.WriteLine("MCP request rejected: invalid or missing secret");
+                        response.StatusCode = 403;
+                        byte[] errorBytes = Encoding.UTF8.GetBytes("Forbidden");
+                        response.ContentLength64 = errorBytes.Length;
+                        await response.OutputStream.WriteAsync(errorBytes);
+                        response.Close();
+                        return;
+                    }
                 }
 
                 string path = request.Url?.AbsolutePath ?? "/";
