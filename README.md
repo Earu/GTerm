@@ -67,7 +67,8 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
 
 **Setup:**
 1. Enable MCP in `Config.json`: `"MCP": true`
-2. Configure your MCP client (e.g., Cursor) to connect to `http://localhost:27513`
+2. (Optional) Set `"MCPSecret"` for authentication
+3. Configure your MCP client to connect to `http://localhost:27513` (add `?secret=...` if using authentication)
 
 **Available Tools:**
 - `run_gmod_command` - Execute console commands
@@ -81,7 +82,19 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
 {
   "MCP": true,
   "MCPPort": 27513,
-  "MCPCollectionWindowMs": 1000
+  "MCPCollectionWindowMs": 1000,
+  "MCPSecret": "your_secret_here"
+}
+```
+
+**MCP Client Example (with secret):**
+```json
+{
+  "mcpServers": {
+    "gterm": {
+      "url": "http://localhost:27513?secret=your_secret_here"
+    }
+  }
 }
 ```
 

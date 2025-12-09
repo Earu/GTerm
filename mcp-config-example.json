@@ -1,9 +1,7 @@
 {
   "mcpServers": {
     "gterm": {
-      "url": "http://localhost:27513"
+      "url": "http://localhost:27513?secret=your_secret_here"
     }
   }
 }
-
-
