@@ -1,7 +1,8 @@
 # GTerm
 Garry's Mod external console software.
-
-![screen2](https://i.imgur.com/N0VEKPM.png)
+<img width="1113" height="1025" alt="WindowsTerminal_2025-12-21_19-19-37" src="https://github.com/user-attachments/assets/19e2ad2f-274b-4ce6-84a5-ac8cf027fc22" />
+<img width="1113" height="1025" alt="WindowsTerminal_2025-12-21_19-19-21" src="https://github.com/user-attachments/assets/b2ec6827-ef3b-49f1-9b7f-fbea110139cc" />
+<img width="1113" height="1025" alt="WindowsTerminal_2025-12-21_19-19-31" src="https://github.com/user-attachments/assets/d897eda9-5639-4564-8e94-b8c08d0faf34" />
 
 ## Client Installation
 - Download the latest [release](https://github.com/Earu/GTerm/releases).
