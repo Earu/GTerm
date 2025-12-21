@@ -28,40 +28,6 @@ namespace GTerm.Extensions
         [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool SetConsoleCtrlHandler(ConsoleEventDelegate callback, [MarshalAs(UnmanagedType.Bool)] bool add);
-
-        internal enum WinMessages : uint
-        {
-            /// <summary>
-            /// An application sends the WM_SETICON message to associate a new large or small icon with a window.
-            /// The system displays the large icon in the ALT+TAB dialog box, and the small icon in the window caption.
-            /// </summary>
-            SETICON = 0x0080,
-        }
-
-        [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
-        private static partial IntPtr SendMessage(IntPtr hWnd, int Msg, int wParam, IntPtr lParam);
-
-        [System.Runtime.Versioning.SupportedOSPlatform("windows6.1")]
-        private static void SetWindowIcon(System.Drawing.Icon icon)
-        {
-            IntPtr mwHandle = Process.GetCurrentProcess().MainWindowHandle;
-            SendMessage(mwHandle, (int)WinMessages.SETICON, 0, icon.Handle);
-            SendMessage(mwHandle, (int)WinMessages.SETICON, 1, icon.Handle);
-        }
-
-        internal static void SetConsoleIcon(string iconFilePath)
-        {
-            if (!OperatingSystem.IsWindowsVersionAtLeast(6, 1)) return;
-
-            if (!string.IsNullOrEmpty(iconFilePath))
-            {
-                System.Drawing.Icon? icon = System.Drawing.Icon.ExtractAssociatedIcon(iconFilePath);
-                if (icon != null)
-                {
-                    SetWindowIcon(icon);
-                }
-            }
-        }
     }
 
     /// <summary>

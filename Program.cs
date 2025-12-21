@@ -48,7 +48,8 @@ namespace GTerm
                 return;
             }
 
-            SetMetadata();
+            Console.Clear();
+            Console.Title = "GTerm";
 
             Config = new Config(args);
 
@@ -157,26 +158,6 @@ namespace GTerm
                 Collector = new CommandCollector(Listener, Config.MCPCollectionWindowMs);
                 MCP = new MCPServer(Collector, Config.MCPPort, Config.MCPSecret);
                 Task.Run(() => MCP.StartAsync());
-            }
-        }
-
-        private static void SetMetadata()
-        {
-            Console.Clear();
-
-            LocalLogger.WriteLine("Setting metadata");
-
-            Console.Title = "GTerm";
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && GmodInterop.TryGetGmodPath(out string gmodPath))
-            {
-                // copy icon from the gmod exe
-                Win32Extensions.SetConsoleIcon(gmodPath);
-                LocalLogger.WriteLine("Set icon metadata");
-            }
-            else
-            {
-                LocalLogger.WriteLine("Failed to set icon metadata, gmod path not found");
             }
         }
 
