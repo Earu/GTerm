@@ -11,7 +11,7 @@ namespace GTerm
     {
         private const string GMOD_ID = "4000";
 
-        private static Process? GetGmodProcess() 
+        private static Process? GetGmodProcess()
             => Process.GetProcessesByName("gmod").FirstOrDefault();
 
         private static bool TryGetSteamVDFPath(out string vdfPath)
@@ -51,22 +51,22 @@ namespace GTerm
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
                     string? homeDir = Environment.GetEnvironmentVariable("HOME");
-                    if (homeDir != null) 
+                    if (homeDir != null)
                     {
                         vdfPath = Path.Join(homeDir, "/Library/Application Support/Steam/steamapps/libraryfolders.vdf");
                         return File.Exists(vdfPath);
                     }
                 }
-                else 
+                else
                 {
                     string? homeDir = Environment.GetEnvironmentVariable("HOME");
-                    if (homeDir != null) 
+                    if (homeDir != null)
                     {
                         vdfPath = Path.Join(homeDir, "/.steam/steam/steamapps/libraryfolders.vdf");
-                        if (!File.Exists(vdfPath)) 
+                        if (!File.Exists(vdfPath))
                         {
                             vdfPath = Path.Join(homeDir, "/.local/share/Steam/steamapps/libraryfolders.vdf");
-                            if (!File.Exists(vdfPath)) 
+                            if (!File.Exists(vdfPath))
                             {
                                 // flatpak
                                 vdfPath = Path.Join(homeDir, "/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/libraryfolders.vdf");
@@ -106,7 +106,7 @@ namespace GTerm
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Could not find Garry's Mod manifest, assuming branch\n" + ex.Message);
+                    LocalLogger.WriteLine($"Could not find Garry's Mod manifest, assuming branch\n" + ex.Message);
                 }
             }
 
@@ -133,7 +133,7 @@ namespace GTerm
                             return true;
                         }
 
-                        int index = path.IndexOf("GarrysMod/bin");
+                        int index = path.IndexOf("GarrysMod");
                         gmodPath = Path.Combine(path[..index], "GarrysMod");
                         return true;
                     }
@@ -163,8 +163,8 @@ namespace GTerm
                                 {
                                     if (gotBeta)
                                     {
-                                        gmodPath = isX64 
-                                            ? Path.Combine(gmodPathDir, "bin/win64/gmod.exe") 
+                                        gmodPath = isX64
+                                            ? Path.Combine(gmodPathDir, "bin/win64/gmod.exe")
                                             : Path.Combine(gmodPathDir, "bin/gmod.exe");
                                     }
                                     else
@@ -180,7 +180,7 @@ namespace GTerm
 
                                     if (!File.Exists(gmodPath))
                                         gmodPath = Path.Combine(gmodPathDir, "hl2.exe");
-                                } 
+                                }
                                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                                 {
                                     gmodPath = Path.Combine(gmodPathDir, "hl2_osx");
@@ -198,7 +198,7 @@ namespace GTerm
                                         gmodPath = Path.Combine(gmodPathDir, "hl2_linux");
                                         if (!File.Exists(gmodPath))
                                             gmodPath = Path.Combine(gmodPathDir, "srcds");
-                                    }    
+                                    }
                                 }
                             }
 
@@ -224,7 +224,7 @@ namespace GTerm
             string moduleName = "gmsv_xconsole_";
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                moduleName += (isX64 ? "win64" : "win32");
+                moduleName += isX64 ? "win64" : "win32";
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
@@ -269,7 +269,7 @@ namespace GTerm
         private static bool IsGmodX64(string gmodBinPath)
         {
             // Base assumption in case it fails later (windows can do x86 and x64, linux/mac only x64)
-            bool isX64 = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) 
+            bool isX64 = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
                 || gmodBinPath.Contains("win64", StringComparison.CurrentCulture)
                 || gmodBinPath.Contains("linux64", StringComparison.CurrentCulture);
 
@@ -298,7 +298,7 @@ namespace GTerm
                     Directory.CreateDirectory(luaBinPath);
                     modifiedGameFiles = true;
                 }
-                
+
                 bool isX64 = IsGmodX64(gmodBinPath);
                 bool justInstalledBin = await InstallBinary(isX64, luaBinPath);
                 if (justInstalledBin) {
@@ -322,7 +322,7 @@ namespace GTerm
                         AnsiConsole.MarkupLine("[white on red]Garry's Mod needs to be restarted for GTerm to work properly.[/]");
                     }
                 }
-                
+
                 success = true;
             }
             catch (Exception ex)
@@ -345,7 +345,7 @@ namespace GTerm
         // Keeps it from getting garbage collected
         private static Win32Extensions.ConsoleEventDelegate? handler;
         private static Process? GmodProcess;
-        
+
         /// <summary>
         /// Launches gmod in textmode
         /// </summary>
