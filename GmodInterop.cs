@@ -165,13 +165,13 @@ namespace GTerm
                                     {
                                         gmodPath = isX64
                                             ? Path.Combine(gmodPathDir, "bin/win64/gmod.exe")
-                                            : Path.Combine(gmodPathDir, "bin/gmod.exe");
+                                            : Path.Combine(gmodPathDir, "gmod.exe");
                                     }
                                     else
                                     {
                                         // get x64 bin path in priority
                                         string gmodPathX64 = Path.Combine(gmodPathDir, "bin/win64/gmod.exe");
-                                        string gmodPathX86 = Path.Combine(gmodPathDir, "bin/gmod.exe");
+                                        string gmodPathX86 = Path.Combine(gmodPathDir, "gmod.exe");
                                         if (File.Exists(gmodPathX64))
                                             gmodPath = gmodPathX64;
                                         else if (File.Exists(gmodPathX86))
