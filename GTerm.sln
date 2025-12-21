@@ -1,5 +1,4 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.11.35222.181
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -11,8 +10,8 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{AF6A87E8-0206-406C-8FD6-BC5A9E4FA10F}.Debug|Any CPU.ActiveCfg = Release|Any CPU
-		{AF6A87E8-0206-406C-8FD6-BC5A9E4FA10F}.Debug|Any CPU.Build.0 = Release|Any CPU
+		{AF6A87E8-0206-406C-8FD6-BC5A9E4FA10F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF6A87E8-0206-406C-8FD6-BC5A9E4FA10F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AF6A87E8-0206-406C-8FD6-BC5A9E4FA10F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AF6A87E8-0206-406C-8FD6-BC5A9E4FA10F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
