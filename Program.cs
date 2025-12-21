@@ -53,7 +53,8 @@ namespace GTerm
             Config = new Config(args);
 
             Process? parent = curProc.GetParent();
-            if (parent?.MainModule?.ModuleName == "gmod.exe")
+            LocalLogger.WriteLine($"Parent process: {parent?.ProcessName}");
+            if (parent?.ProcessName.Equals("gmod", StringComparison.OrdinalIgnoreCase) == true)
             {
                 LocalLogger.WriteLine("Started from Gmod!");
                 Config.StartAsGmod = false; // this cannot be true if gmod already runs GTerm as a child process
@@ -68,7 +69,8 @@ namespace GTerm
 
                         LocalLogger.WriteLine("Gmod crashed, attempting to restart!");
                         ProcessStartInfo oldStartInfo = parent.StartInfo;
-                        if (GmodInterop.TryGetGmodPath(out string gmodBinpath)) {
+                        if (GmodInterop.TryGetGmodPath(out string gmodBinpath))
+                        {
                             oldStartInfo.FileName = gmodBinpath;
                             LocalLogger.WriteLine("Restarting Gmod!");
                             Process.Start(parent.StartInfo); // reboot gmod because crash and it was the owning process
