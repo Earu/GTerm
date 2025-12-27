@@ -81,7 +81,7 @@ namespace GTerm
                 }
             }
 
-            string? processPath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
+            string? processPath = Path.GetDirectoryName(Process.GetCurrentProcess().GetExecutablePath());
             if (processPath != null)
             {
                 ArchivePath = Path.Combine(processPath, "Archives");
