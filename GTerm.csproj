@@ -6,6 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Company>Earu</Company>
+    <Product>GTerm</Product>
+    <Description>Garry's Mod external console software with MCP and Websocket support.</Description>
   </PropertyGroup>
 
   <ItemGroup>
