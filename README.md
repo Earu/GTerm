@@ -64,7 +64,7 @@ Receiving console output (JSON):
 ```
 
 ## MCP Server Integration
-GTerm includes an MCP (Model Context Protocol) server for AI agents such as Cursor, Warp, etc..
+GTerm includes an MCP (Model Context Protocol) server for AI agents such as Cursor, Vscode, Zed, Claude Code, etc..
 
 **Setup:**
 1. Enable MCP in `Config.json`: `"MCP": true`
