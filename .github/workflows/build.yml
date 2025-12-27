@@ -12,6 +12,10 @@ jobs:
   build:
     name: Build
     runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
     strategy:
       matrix:
         include:
@@ -23,17 +27,13 @@ jobs:
           - os: windows-latest
             runtime: win-x64
             arch: x64
-          # Handle Windows x86
-          - os: windows-latest
-            runtime: win-x86
-            arch: x86
           # Handle macOS x64
           - os: macos-latest
             runtime: osx-x64
             arch: x64
 
     steps:
-      - name: Checkout source cod
+      - name: Checkout source code
         uses: actions/checkout@v4
 
       - name: Setup .NET
@@ -46,6 +46,11 @@ jobs:
 
       - name: Publish executable
         run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -o ./publish/${{ matrix.os }}/${{ matrix.arch }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: './publish/${{ matrix.os }}/${{ matrix.arch }}/*'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
