@@ -1,5 +1,6 @@
 ﻿using System.Drawing;
 using System.IO.Pipes;
+using System.Runtime.Versioning;
 using System.Security.Principal;
 using System.Text;
 
@@ -7,6 +8,7 @@ namespace GTerm.Listeners
 {
     delegate void LogEventHandler(object sender, LogEventArgs args);
 
+    [SupportedOSPlatform("windows")]
     internal class WindowsLogListener : ILogListener
     {
         private const int BUFFER_SIZE = 16384; // max buffer size as per xconsole Windows named pipe
@@ -79,7 +81,7 @@ namespace GTerm.Listeners
                                 int b = reader.ReadByte();
                                 int a = reader.ReadByte();
 
-                                Color color = Color.FromArgb(a, r, g, b);     
+                                Color color = Color.FromArgb(a, r, g, b);
 
                                 string fullMsg = ReadString(reader);
                                 OnLog?.Invoke(this, new LogEventArgs(type, level, group, color, fullMsg));
