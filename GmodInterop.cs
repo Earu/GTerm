@@ -124,7 +124,7 @@ namespace GTerm
                 Process? gmodProcess = GetGmodProcess();
                 if (gmodProcess != null)
                 {
-                    string? path = gmodProcess.MainModule?.FileName.Replace('\\', '/');
+                    string? path = gmodProcess.GetExecutablePath()?.Replace('\\', '/');
                     if (path != null)
                     {
                         if (toBin)

@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using GTerm.Extensions;
 
 namespace GTerm
 {
@@ -40,7 +41,7 @@ namespace GTerm
         {
             JsonConfig cfg = new();
 
-            string? appPath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
+            string? appPath = Path.GetDirectoryName(Process.GetCurrentProcess().GetExecutablePath());
             if (appPath != null)
             {
                 string configPath = Path.Combine(appPath, "Config.json");
