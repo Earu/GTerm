@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using GTerm.Extensions;
 
 namespace GTerm
 {
@@ -6,7 +7,7 @@ namespace GTerm
     {
         internal static void WriteLine(params object[] args)
         {
-            string? gtermDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
+            string? gtermDir = Path.GetDirectoryName(Process.GetCurrentProcess().GetExecutablePath());
             if (gtermDir == null) return;
 
             try {
