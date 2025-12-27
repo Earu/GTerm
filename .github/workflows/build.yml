@@ -47,6 +47,49 @@ jobs:
       - name: Publish executable
         run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -o ./publish/${{ matrix.os }}/${{ matrix.arch }}
 
+      - name: Sign Windows executable with self-signed certificate
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Create a self-signed certificate
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Earu, O=GTerm, C=US" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+
+          # Export to PFX
+          $password = ConvertTo-SecureString -String "tempPassword123" -Force -AsPlainText
+          $pfxPath = Join-Path $env:TEMP "codesign.pfx"
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $password | Out-Null
+
+          # Find signtool
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\" -Recurse -Filter "signtool.exe" |
+            Where-Object { $_.FullName -match "x64" } |
+            Select-Object -First 1
+
+          if (-not $signtool) {
+            Write-Error "signtool.exe not found"
+            exit 1
+          }
+
+          # Find and sign the executable
+          $exe = Get-ChildItem -Path "./publish/${{ matrix.os }}/${{ matrix.arch }}" -Filter "*.exe" | Select-Object -First 1
+
+          if ($exe) {
+            Write-Host "Signing $($exe.Name) with self-signed certificate..."
+            & $signtool.FullName sign /f $pfxPath /p "tempPassword123" /fd SHA256 $exe.FullName
+
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Successfully signed executable"
+            } else {
+              Write-Error "Failed to sign executable"
+              exit 1
+            }
+          } else {
+            Write-Warning "No executable found to sign"
+          }
+
+          # Cleanup
+          Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+          Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force -ErrorAction SilentlyContinue
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v1
         with:
