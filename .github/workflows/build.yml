@@ -39,7 +39,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.x'  # Specify the required .NET SDK version
+          dotnet-version: '10.x'  # Specify the required .NET SDK version
 
       - name: Install dependencies
         run: dotnet restore
@@ -57,3 +57,188 @@ jobs:
         with:
           name: ${{ matrix.os }}-${{ matrix.arch }}
           path: ./publish/${{ matrix.os }}/${{ matrix.arch }}
+
+  build-module:
+    name: Build Module
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x64 targets build against the x86-64-support branch (generator v3,
+          # premake beta6). x86 targets build against the main/master branch
+          # (generator v2, premake beta8) because that is the only SDK that fully
+          # declares SpewOutputFunc for the 32-bit build.
+
+          # Linux x64 (x86-64 gmod branch)
+          - os: ubuntu-latest
+            action: gmake
+            project_dir: projects/linux/gmake
+            gmc_ref: x86-64-support-sourcesdk
+            generator_version: 3
+            premake_version: 5.0.0-beta6
+            config: releasewithsymbols_x86_64
+            arch_dir: x86_64
+            artifact: gmsv_gterm_linux64.dll
+          # Linux x86 (main gmod branch)
+          - os: ubuntu-latest
+            action: gmake
+            project_dir: projects/linux/gmake
+            gmc_ref: master
+            generator_version: 2
+            premake_version: 5.0.0-beta8
+            config: releasewithsymbols_x86
+            arch_dir: x86
+            artifact: gmsv_gterm_linux.dll
+          # macOS x64 (32-bit macOS is unsupported by modern Xcode and ships no SDK libs)
+          - os: macos-latest
+            action: gmake
+            project_dir: projects/macosx/gmake
+            gmc_ref: x86-64-support-sourcesdk
+            generator_version: 3
+            premake_version: 5.0.0-beta6
+            config: releasewithsymbols_x86_64
+            arch_dir: x86_64
+            artifact: gmsv_gterm_osx64.dll
+          # Windows x64 (x86-64 gmod branch)
+          - os: windows-latest
+            action: vs2022
+            project_dir: projects/windows/vs2022
+            gmc_ref: x86-64-support-sourcesdk
+            generator_version: 3
+            premake_version: 5.0.0-beta6
+            config: releasewithsymbols_x86_64
+            arch_dir: x86_64
+            msbuild_platform: x64
+            artifact: gmsv_gterm_win64.dll
+          # Windows x86 (main gmod branch)
+          - os: windows-latest
+            action: vs2022
+            project_dir: projects/windows/vs2022
+            gmc_ref: master
+            generator_version: 2
+            premake_version: 5.0.0-beta8
+            config: releasewithsymbols_x86
+            arch_dir: x86
+            msbuild_platform: Win32
+            artifact: gmsv_gterm_win32.dll
+
+    env:
+      PREMAKE_VERSION: ${{ matrix.premake_version }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Checkout garrysmod_common
+        uses: actions/checkout@v4
+        with:
+          repository: danielga/garrysmod_common
+          ref: ${{ matrix.gmc_ref }}
+          submodules: recursive
+          path: garrysmod_common
+
+      - name: Setup premake5 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSL -o premake.tar.gz "https://github.com/premake/premake-core/releases/download/v${PREMAKE_VERSION}/premake-${PREMAKE_VERSION}-linux.tar.gz"
+          tar xzf premake.tar.gz
+          chmod +x premake5  # some release tarballs ship without the executable bit
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Setup premake5 (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          curl -sSL -o premake.tar.gz "https://github.com/premake/premake-core/releases/download/v${PREMAKE_VERSION}/premake-${PREMAKE_VERSION}-macosx.tar.gz"
+          tar xzf premake.tar.gz
+          chmod +x premake5  # some release tarballs ship without the executable bit
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Setup premake5 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o premake.zip "https://github.com/premake/premake-core/releases/download/v$env:PREMAKE_VERSION/premake-$env:PREMAKE_VERSION-windows.zip"
+          7z x premake.zip -opremake
+          "$env:GITHUB_WORKSPACE\premake" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup MSBuild (Windows)
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
+      # The common project's macOS filter adds processor_detect_linux.cpp relative
+      # to common/, but that file lives in tier1/ (and is already compiled by the
+      # tier1 project, which is what provides the symbol at link time). The Linux
+      # filter of the same project omits it, so drop the stray reference here too.
+      - name: Patch SDK for macOS
+        if: runner.os == 'macOS'
+        run: |
+          sed -i '' '/files("processor_detect_linux.cpp")/d' \
+            garrysmod_common/sourcesdk-minimal/common/premake5_create_project.lua
+
+      - name: Generate project files
+        working-directory: module
+        env:
+          GARRYSMOD_COMMON: ${{ github.workspace }}/garrysmod_common
+          # Overrides the PROJECT_GENERATOR_VERSION baked into premake5.lua so the
+          # same source builds against either SDK branch (v3 for x64, v2 for x86).
+          PROJECT_GENERATOR_VERSION: ${{ matrix.generator_version }}
+        run: premake5 ${{ matrix.action }}
+
+      # The x86 (main gmod branch) build is 32-bit, so it needs the multilib
+      # toolchain and 32-bit libc/libstdc++ to compile and link against the
+      # bundled linux32 SDK libs.
+      - name: Install 32-bit toolchain (Linux x86)
+        if: runner.os == 'Linux' && matrix.arch_dir == 'x86'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        working-directory: module/${{ matrix.project_dir }}
+        run: make config=${{ matrix.config }}
+
+      # This Source SDK branch is only tested on Linux/Windows, so the macOS build
+      # needs several compatibility nudges:
+      #  - The runners are arm64 but the module targets x86_64. premake emits
+      #    -m64/-msse2 without an -arch, so we force clang to cross-compile to
+      #    x86_64 (otherwise -msse2 is rejected on the native arm64 target).
+      #  - The SDK bare-includes <malloc.h> (a Linux-only header) in several
+      #    places, so we put a shim on the include path that redirects it to the
+      #    macOS allocator headers.
+      #  - Under NO_MALLOC_OVERRIDE the SDK drops the g_pMemAlloc declaration and
+      #    only avoids referencing it when REMEMBER_ALLOC_SIZE_FOR_VALGRIND is set
+      #    (gated to _LINUX upstream), so we define it to take the same path.
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        working-directory: module/${{ matrix.project_dir }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/macshim"
+          printf '#pragma once\n#include <stdlib.h>\n#include <malloc/malloc.h>\n' > "$RUNNER_TEMP/macshim/malloc.h"
+          FLAGS="-arch x86_64 -I$RUNNER_TEMP/macshim -DREMEMBER_ALLOC_SIZE_FOR_VALGRIND=1"
+          make config=${{ matrix.config }} \
+            CC="clang $FLAGS" \
+            CXX="clang++ $FLAGS"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: module/${{ matrix.project_dir }}
+        run: msbuild gterm.sln /m /p:Configuration=ReleaseWithSymbols /p:Platform=${{ matrix.msbuild_platform }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: module/${{ matrix.project_dir }}/${{ matrix.arch_dir }}/ReleaseWithSymbols/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-${{ matrix.artifact }}
+          path: module/${{ matrix.project_dir }}/${{ matrix.arch_dir }}/ReleaseWithSymbols/${{ matrix.artifact }}

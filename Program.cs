@@ -25,9 +25,7 @@ namespace GTerm
         private static readonly StringBuilder InputBuffer = new();
         private static readonly Thread UserInputThread = new(ProcessUserInput);
 
-        private static readonly ILogListener Listener = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? new WindowsLogListener()
-            : new UnixLogListener();
+        private static readonly ILogListener Listener = new TcpLogListener();
 
         private static string ArchivePath = string.Empty;
         private static Config Config = new();
@@ -95,7 +93,7 @@ namespace GTerm
                 }
             }
 
-            Task.Run(GmodInterop.InstallXConsole); // try to install xconsole
+            Task.Run(GmodInterop.InstallGTerm); // try to install the gterm module
 
             if (Config.StartAsGmod)
             {
