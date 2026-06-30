@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 
 namespace GTerm.Listeners
 {
+    delegate void LogEventHandler(object sender, LogEventArgs args);
+
     internal interface ILogListener
     {
         internal event EventHandler? OnConnected;
