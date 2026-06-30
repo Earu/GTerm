@@ -257,7 +257,7 @@ namespace GTerm
             string targetModuleFilePath = Path.Combine(luaBinPath, moduleName);
             if (!File.Exists(targetModuleFilePath))
             {
-                string moduleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/Modules/{moduleName}";
+                string moduleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/prebuilt-bins/{moduleName}";
                 await DownloadFileAsync(moduleUrl, targetModuleFilePath);
 
                 return true;
