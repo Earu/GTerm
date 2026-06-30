@@ -40,7 +40,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.x'  # Specify the required .NET SDK version
+          dotnet-version: '10.x'  # Specify the required .NET SDK version
 
       - name: Install dependencies
         run: dotnet restore
