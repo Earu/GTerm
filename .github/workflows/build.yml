@@ -70,21 +70,43 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x64
+          # Linux x64 (x86-64 gmod branch)
           - os: ubuntu-latest
             action: gmake
             project_dir: projects/linux/gmake
+            config: releasewithsymbols_x86_64
+            arch_dir: x86_64
             artifact: gmsv_gterm_linux64.dll
-          # macOS x64
+          # Linux x86 (main gmod branch)
+          - os: ubuntu-latest
+            action: gmake
+            project_dir: projects/linux/gmake
+            config: releasewithsymbols_x86
+            arch_dir: x86
+            artifact: gmsv_gterm_linux.dll
+          # macOS x64 (32-bit macOS is unsupported by modern Xcode and ships no SDK libs)
           - os: macos-latest
             action: gmake
             project_dir: projects/macosx/gmake
+            config: releasewithsymbols_x86_64
+            arch_dir: x86_64
             artifact: gmsv_gterm_osx64.dll
-          # Windows x64
+          # Windows x64 (x86-64 gmod branch)
           - os: windows-latest
             action: vs2022
             project_dir: projects/windows/vs2022
+            config: releasewithsymbols_x86_64
+            arch_dir: x86_64
+            msbuild_platform: x64
             artifact: gmsv_gterm_win64.dll
+          # Windows x86 (main gmod branch)
+          - os: windows-latest
+            action: vs2022
+            project_dir: projects/windows/vs2022
+            config: releasewithsymbols_x86
+            arch_dir: x86
+            msbuild_platform: Win32
+            artifact: gmsv_gterm_win32.dll
 
     env:
       PREMAKE_VERSION: 5.0.0-beta6
@@ -143,10 +165,20 @@ jobs:
           GARRYSMOD_COMMON: ${{ github.workspace }}/garrysmod_common
         run: premake5 ${{ matrix.action }}
 
+      # The x86 (main gmod branch) build is 32-bit, so it needs the multilib
+      # toolchain and 32-bit libc/libstdc++ to compile and link against the
+      # bundled linux32 SDK libs.
+      - name: Install 32-bit toolchain (Linux x86)
+        if: runner.os == 'Linux' && matrix.arch_dir == 'x86'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+
       - name: Build (Linux)
         if: runner.os == 'Linux'
         working-directory: module/${{ matrix.project_dir }}
-        run: make config=releasewithsymbols_x86_64
+        run: make config=${{ matrix.config }}
 
       # This Source SDK branch is only tested on Linux/Windows, so the macOS build
       # needs several compatibility nudges:
@@ -166,7 +198,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/macshim"
           printf '#pragma once\n#include <stdlib.h>\n#include <malloc/malloc.h>\n' > "$RUNNER_TEMP/macshim/malloc.h"
           FLAGS="-arch x86_64 -I$RUNNER_TEMP/macshim -DREMEMBER_ALLOC_SIZE_FOR_VALGRIND=1"
-          make config=releasewithsymbols_x86_64 \
+          make config=${{ matrix.config }} \
             CC="clang $FLAGS" \
             CXX="clang++ $FLAGS"
 
@@ -174,15 +206,15 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         working-directory: module/${{ matrix.project_dir }}
-        run: msbuild gterm.sln /m /p:Configuration=ReleaseWithSymbols /p:Platform=x64
+        run: msbuild gterm.sln /m /p:Configuration=ReleaseWithSymbols /p:Platform=${{ matrix.msbuild_platform }}
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v1
         with:
-          subject-path: module/${{ matrix.project_dir }}/x86_64/ReleaseWithSymbols/${{ matrix.artifact }}
+          subject-path: module/${{ matrix.project_dir }}/${{ matrix.arch_dir }}/ReleaseWithSymbols/${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: module-${{ matrix.artifact }}
-          path: module/${{ matrix.project_dir }}/x86_64/ReleaseWithSymbols/${{ matrix.artifact }}
+          path: module/${{ matrix.project_dir }}/${{ matrix.arch_dir }}/ReleaseWithSymbols/${{ matrix.artifact }}
