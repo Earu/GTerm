@@ -11,19 +11,19 @@ Garry's Mod external console software.
 - Enjoy!
 
 ## Server Installation (steamcmd)
-- Download the latest [release of `xconsole`](https://github.com/Earu/gmsv_xconsole_x64/releases).
+- Download the latest [release of `gterm`](https://github.com/Earu/gmsv_xconsole_x64/releases).
 - Move the `.dll` (even on macos/linux!) under `srcds/garrysmod/lua/bin` (if the `bin` folder doesnt exist, create it).
-- In `srcds/garrysmod/lua/includes/init.lua` add at the top of the file `require("xconsole")`.
+- In `srcds/garrysmod/lua/includes/init.lua` add at the top of the file `require("gterm")`.
 - Restart the server.
 - Launch the gterm executable.
 - Enjoy!
 
-*IMPORTANT NOTE: If you run your server inside a docker container or any other sandbox you will need to install gterm within that sandbox or give the container the rights to write to `/tmp` on UNIX systems.*
+*IMPORTANT NOTE: GTerm communicates with the gmod module over a localhost TCP socket (`127.0.0.1:27514`), so GTerm must run on the same host as the server. If you run your server inside a docker container or any other sandbox, run GTerm inside that same sandbox (or otherwise share the loopback interface).*
 
 ## In case GTerm does NOT detect your Garry's Mod CLIENT installation
-- Download the latest [release of `xconsole`](https://github.com/Earu/gmsv_xconsole_x64/releases).
+- Download the latest [release of `gterm`](https://github.com/Earu/gmsv_xconsole_x64/releases).
 - Move the `.dll` (even on macos/linux!) under `GarrysMod/garrysmod/lua/bin` (if the `bin` folder doesnt exist, create it).
-- In `GarrysMod/garrysmod/lua/menu/menu.lua` add at the bottom of the file `require("xconsole")`.
+- In `GarrysMod/garrysmod/lua/menu/menu.lua` add at the bottom of the file `require("gterm")`.
 - Restart Garry's Mod.
 - Voila!
 
