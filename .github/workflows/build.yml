@@ -127,6 +127,16 @@ jobs:
         if: runner.os == 'Windows'
         uses: microsoft/setup-msbuild@v2
 
+      # The common project's macOS filter adds processor_detect_linux.cpp relative
+      # to common/, but that file lives in tier1/ (and is already compiled by the
+      # tier1 project, which is what provides the symbol at link time). The Linux
+      # filter of the same project omits it, so drop the stray reference here too.
+      - name: Patch SDK for macOS
+        if: runner.os == 'macOS'
+        run: |
+          sed -i '' '/files("processor_detect_linux.cpp")/d' \
+            garrysmod_common/sourcesdk-minimal/common/premake5_create_project.lua
+
       - name: Generate project files
         working-directory: module
         env:
