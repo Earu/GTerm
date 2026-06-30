@@ -58,3 +58,99 @@ jobs:
         with:
           name: ${{ matrix.os }}-${{ matrix.arch }}
           path: ./publish/${{ matrix.os }}/${{ matrix.arch }}
+
+  build-module:
+    name: Build Module
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64
+          - os: ubuntu-latest
+            action: gmake
+            project_dir: projects/linux/gmake
+            artifact: gmsv_gterm_linux64.dll
+          # macOS x64 (Intel runner for native x86_64 build)
+          - os: macos-13
+            action: gmake
+            project_dir: projects/macosx/gmake
+            artifact: gmsv_gterm_osx64.dll
+          # Windows x64
+          - os: windows-latest
+            action: vs2022
+            project_dir: projects/windows/vs2022
+            artifact: gmsv_gterm_win64.dll
+
+    env:
+      PREMAKE_VERSION: 5.0.0-beta6
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Checkout garrysmod_common
+        uses: actions/checkout@v4
+        with:
+          repository: danielga/garrysmod_common
+          ref: x86-64-support-sourcesdk
+          submodules: recursive
+          path: garrysmod_common
+
+      - name: Setup premake5 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSL -o premake.tar.gz "https://github.com/premake/premake-core/releases/download/v${PREMAKE_VERSION}/premake-${PREMAKE_VERSION}-linux.tar.gz"
+          tar xzf premake.tar.gz
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Setup premake5 (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          curl -sSL -o premake.tar.gz "https://github.com/premake/premake-core/releases/download/v${PREMAKE_VERSION}/premake-${PREMAKE_VERSION}-macosx.tar.gz"
+          tar xzf premake.tar.gz
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Setup premake5 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o premake.zip "https://github.com/premake/premake-core/releases/download/v$env:PREMAKE_VERSION/premake-$env:PREMAKE_VERSION-windows.zip"
+          7z x premake.zip -opremake
+          "$env:GITHUB_WORKSPACE\premake" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup MSBuild (Windows)
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Generate project files
+        working-directory: module
+        env:
+          GARRYSMOD_COMMON: ${{ github.workspace }}/garrysmod_common
+        run: premake5 ${{ matrix.action }}
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        working-directory: module/${{ matrix.project_dir }}
+        run: make config=releasewithsymbols_x86_64
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: module/${{ matrix.project_dir }}
+        run: msbuild gterm.sln /m /p:Configuration=ReleaseWithSymbols /p:Platform=x64
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: module/${{ matrix.project_dir }}/x86_64/ReleaseWithSymbols/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-${{ matrix.artifact }}
+          path: module/${{ matrix.project_dir }}/x86_64/ReleaseWithSymbols/${{ matrix.artifact }}
