@@ -138,20 +138,27 @@ jobs:
         working-directory: module/${{ matrix.project_dir }}
         run: make config=releasewithsymbols_x86_64
 
-      # The macOS runners are arm64, but the module targets x86_64. premake emits
-      # -m64/-msse2 without an -arch, so we force clang to cross-compile to x86_64
-      # (otherwise -msse2 is rejected on the native arm64 target). The Source SDK
-      # also bare-includes <malloc.h> (a Linux-only header) in several places, so
-      # we put a shim on the include path that redirects it to the macOS headers.
+      # This Source SDK branch is only tested on Linux/Windows, so the macOS build
+      # needs several compatibility nudges:
+      #  - The runners are arm64 but the module targets x86_64. premake emits
+      #    -m64/-msse2 without an -arch, so we force clang to cross-compile to
+      #    x86_64 (otherwise -msse2 is rejected on the native arm64 target).
+      #  - The SDK bare-includes <malloc.h> (a Linux-only header) in several
+      #    places, so we put a shim on the include path that redirects it to the
+      #    macOS allocator headers.
+      #  - Under NO_MALLOC_OVERRIDE the SDK drops the g_pMemAlloc declaration and
+      #    only avoids referencing it when REMEMBER_ALLOC_SIZE_FOR_VALGRIND is set
+      #    (gated to _LINUX upstream), so we define it to take the same path.
       - name: Build (macOS)
         if: runner.os == 'macOS'
         working-directory: module/${{ matrix.project_dir }}
         run: |
           mkdir -p "$RUNNER_TEMP/macshim"
           printf '#pragma once\n#include <stdlib.h>\n#include <malloc/malloc.h>\n' > "$RUNNER_TEMP/macshim/malloc.h"
+          FLAGS="-arch x86_64 -I$RUNNER_TEMP/macshim -DREMEMBER_ALLOC_SIZE_FOR_VALGRIND=1"
           make config=releasewithsymbols_x86_64 \
-            CC="clang -arch x86_64 -I$RUNNER_TEMP/macshim" \
-            CXX="clang++ -arch x86_64 -I$RUNNER_TEMP/macshim"
+            CC="clang $FLAGS" \
+            CXX="clang++ $FLAGS"
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
