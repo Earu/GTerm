@@ -148,6 +148,7 @@ jobs:
         run: |
           curl -sSL -o premake.tar.gz "https://github.com/premake/premake-core/releases/download/v${PREMAKE_VERSION}/premake-${PREMAKE_VERSION}-linux.tar.gz"
           tar xzf premake.tar.gz
+          chmod +x premake5  # some release tarballs ship without the executable bit
           echo "$PWD" >> "$GITHUB_PATH"
 
       - name: Setup premake5 (macOS)
@@ -155,6 +156,7 @@ jobs:
         run: |
           curl -sSL -o premake.tar.gz "https://github.com/premake/premake-core/releases/download/v${PREMAKE_VERSION}/premake-${PREMAKE_VERSION}-macosx.tar.gz"
           tar xzf premake.tar.gz
+          chmod +x premake5  # some release tarballs ship without the executable bit
           echo "$PWD" >> "$GITHUB_PATH"
 
       - name: Setup premake5 (Windows)
