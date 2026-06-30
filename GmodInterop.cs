@@ -114,6 +114,53 @@ namespace GTerm
             return false;
         }
 
+        private static bool IsGmodRunningWithProton()
+        {
+            // Proton is a Linux-only concept
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return false;
+
+            if (!TryGetSteamVDFPath(out string vdfPath)) return false;
+
+            try
+            {
+                // config.vdf lives in the Steam root, which is the parent of the steamapps folder
+                string? steamAppsDir = Path.GetDirectoryName(vdfPath);
+                string? steamRoot = steamAppsDir != null ? Path.GetDirectoryName(steamAppsDir) : null;
+                if (steamRoot == null) return false;
+
+                string configPath = Path.Combine(steamRoot, "config/config.vdf");
+                if (!File.Exists(configPath)) return false;
+
+                using FileStream configFile = File.OpenRead(configPath);
+                VdfDeserializer deserializer = new();
+                dynamic config = deserializer.Deserialize(configFile);
+                dynamic? compatMapping = config?.InstallConfigStore?.Software?.Valve?.Steam?.CompatToolMapping;
+                if (compatMapping == null) return false;
+
+                // A per-game mapping (keyed by the gmod app id) always wins over the global
+                // default mapping (keyed by "0").
+                string? appTool = null;
+                string? defaultTool = null;
+                foreach (dynamic kv in compatMapping)
+                {
+                    if (kv.Key == GMOD_ID) appTool = kv.Value?.name as string;
+                    else if (kv.Key == "0") defaultTool = kv.Value?.name as string;
+                }
+
+                string? tool = !string.IsNullOrWhiteSpace(appTool) ? appTool : defaultTool;
+
+                // A Steam Linux Runtime (sniper/soldier) entry still runs the native Linux
+                // binaries, so only treat an explicit Proton tool as Proton.
+                return !string.IsNullOrWhiteSpace(tool)
+                    && tool.Contains("proton", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                LocalLogger.WriteLine("Could not determine Proton usage for Garry's Mod: ", ex.Message);
+                return false;
+            }
+        }
+
         internal static bool TryGetGmodPath(out string gmodPath, bool toBin = true)
         {
             try
@@ -159,7 +206,7 @@ namespace GTerm
                             {
                                 string gmodPathDir = gmodPath;
                                 bool gotBeta = TryGetMountedBeta(out bool isX64);
-                                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || IsGmodRunningWithProton())
                                 {
                                     if (gotBeta)
                                     {
@@ -222,7 +269,7 @@ namespace GTerm
         private static string GetBinaryFileName(bool isX64)
         {
             string moduleName = "gmsv_gterm_";
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || IsGmodRunningWithProton())
             {
                 moduleName += isX64 ? "win64" : "win32";
             }
