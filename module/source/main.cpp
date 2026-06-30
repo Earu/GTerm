@@ -11,6 +11,7 @@
 
 #include <cstring>
 #include <cstdint>
+#include <cerrno>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -175,10 +176,34 @@ static bool RecvAll(socket_t sock, uint8_t* out, size_t len)
 #else
 		ssize_t n = recv(sock, out + received, len - received, 0);
 #endif
-		if (n <= 0)
+		if (n > 0)
+		{
+			received += static_cast<size_t>(n);
+			continue;
+		}
+
+		// n == 0 means the peer closed the connection: a real disconnect.
+		if (n == 0)
 			return false;
 
-		received += static_cast<size_t>(n);
+		// n < 0: the accepted socket inherits SO_RCVTIMEO from the listen
+		// socket, so an idle read trips the timeout roughly every 250ms. That
+		// is not a disconnect - keep waiting unless we're shutting down. Any
+		// other error is a genuine failure and drops the client.
+#ifdef _WIN32
+		int err = WSAGetLastError();
+		if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK || err == WSAEINTR)
+#else
+		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+#endif
+		{
+			if (serverShutdown)
+				return false;
+
+			continue;
+		}
+
+		return false;
 	}
 
 	return true;
