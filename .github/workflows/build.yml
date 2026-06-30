@@ -70,10 +70,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # x64 targets build against the x86-64-support branch (generator v3,
+          # premake beta6). x86 targets build against the main/master branch
+          # (generator v2, premake beta8) because that is the only SDK that fully
+          # declares SpewOutputFunc for the 32-bit build.
+
           # Linux x64 (x86-64 gmod branch)
           - os: ubuntu-latest
             action: gmake
             project_dir: projects/linux/gmake
+            gmc_ref: x86-64-support-sourcesdk
+            generator_version: 3
+            premake_version: 5.0.0-beta6
             config: releasewithsymbols_x86_64
             arch_dir: x86_64
             artifact: gmsv_gterm_linux64.dll
@@ -81,6 +89,9 @@ jobs:
           - os: ubuntu-latest
             action: gmake
             project_dir: projects/linux/gmake
+            gmc_ref: master
+            generator_version: 2
+            premake_version: 5.0.0-beta8
             config: releasewithsymbols_x86
             arch_dir: x86
             artifact: gmsv_gterm_linux.dll
@@ -88,6 +99,9 @@ jobs:
           - os: macos-latest
             action: gmake
             project_dir: projects/macosx/gmake
+            gmc_ref: x86-64-support-sourcesdk
+            generator_version: 3
+            premake_version: 5.0.0-beta6
             config: releasewithsymbols_x86_64
             arch_dir: x86_64
             artifact: gmsv_gterm_osx64.dll
@@ -95,6 +109,9 @@ jobs:
           - os: windows-latest
             action: vs2022
             project_dir: projects/windows/vs2022
+            gmc_ref: x86-64-support-sourcesdk
+            generator_version: 3
+            premake_version: 5.0.0-beta6
             config: releasewithsymbols_x86_64
             arch_dir: x86_64
             msbuild_platform: x64
@@ -103,13 +120,16 @@ jobs:
           - os: windows-latest
             action: vs2022
             project_dir: projects/windows/vs2022
+            gmc_ref: master
+            generator_version: 2
+            premake_version: 5.0.0-beta8
             config: releasewithsymbols_x86
             arch_dir: x86
             msbuild_platform: Win32
             artifact: gmsv_gterm_win32.dll
 
     env:
-      PREMAKE_VERSION: 5.0.0-beta6
+      PREMAKE_VERSION: ${{ matrix.premake_version }}
 
     steps:
       - name: Checkout source code
@@ -119,7 +139,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: danielga/garrysmod_common
-          ref: x86-64-support-sourcesdk
+          ref: ${{ matrix.gmc_ref }}
           submodules: recursive
           path: garrysmod_common
 
@@ -163,6 +183,9 @@ jobs:
         working-directory: module
         env:
           GARRYSMOD_COMMON: ${{ github.workspace }}/garrysmod_common
+          # Overrides the PROJECT_GENERATOR_VERSION baked into premake5.lua so the
+          # same source builds against either SDK branch (v3 for x64, v2 for x86).
+          PROJECT_GENERATOR_VERSION: ${{ matrix.generator_version }}
         run: premake5 ${{ matrix.action }}
 
       # The x86 (main gmod branch) build is 32-bit, so it needs the multilib
