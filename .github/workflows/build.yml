@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - tcp
   pull_request:
     branches:
       - master
