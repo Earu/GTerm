@@ -221,7 +221,7 @@ namespace GTerm
 
         private static string GetBinaryFileName(bool isX64)
         {
-            string moduleName = "gmsv_xconsole_";
+            string moduleName = "gmsv_gterm_";
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 moduleName += isX64 ? "win64" : "win32";
@@ -254,11 +254,11 @@ namespace GTerm
         private static async Task<bool> InstallBinary(bool isX64, string luaBinPath)
         {
             string moduleName = GetBinaryFileName(isX64);
-            string targetXConsoleFilePath = Path.Combine(luaBinPath, moduleName);
-            if (!File.Exists(targetXConsoleFilePath))
+            string targetModuleFilePath = Path.Combine(luaBinPath, moduleName);
+            if (!File.Exists(targetModuleFilePath))
             {
-                string XConsoleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/Modules/{moduleName}";
-                await DownloadFileAsync(XConsoleUrl, targetXConsoleFilePath);
+                string moduleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/Modules/{moduleName}";
+                await DownloadFileAsync(moduleUrl, targetModuleFilePath);
 
                 return true;
             }
@@ -280,7 +280,7 @@ namespace GTerm
             return isX64;
         }
 
-        internal static async Task<(bool, bool)> InstallXConsole()
+        internal static async Task<(bool, bool)> InstallGTerm()
         {
             bool modifiedGameFiles = false;
             bool success = false;
@@ -289,7 +289,7 @@ namespace GTerm
 
             try
             {
-                LocalLogger.WriteLine("Installing xconsole");
+                LocalLogger.WriteLine("Installing gterm");
                 string luaPath = Path.Combine(baseGmodPath, "garrysmod/lua");
                 string luaBinPath = Path.Combine(luaPath, "bin");
 
@@ -307,9 +307,9 @@ namespace GTerm
 
                 string menuInitFilePath = Path.Combine(luaPath, "menu/menu.lua");
                 string menuInitLuaCode = File.ReadAllText(menuInitFilePath);
-                if (!menuInitLuaCode.Contains("xconsole", StringComparison.CurrentCulture))
+                if (!menuInitLuaCode.Contains("gterm", StringComparison.CurrentCulture))
                 {
-                    File.AppendAllText(menuInitFilePath, "\nrequire(\"xconsole\")\n");
+                    File.AppendAllText(menuInitFilePath, "\nrequire(\"gterm\")\n");
                     modifiedGameFiles = true;
                 }
 
@@ -327,8 +327,8 @@ namespace GTerm
             }
             catch (Exception ex)
             {
-                LocalLogger.WriteLine("Could not install xconsole: ", ex.Message);
-                AnsiConsole.MarkupLine("[white on red]Could not install xconsole![/]");
+                LocalLogger.WriteLine("Could not install gterm: ", ex.Message);
+                AnsiConsole.MarkupLine("[white on red]Could not install gterm![/]");
             }
 
             return (success, modifiedGameFiles);
