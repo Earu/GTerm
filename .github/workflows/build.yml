@@ -133,10 +133,18 @@ jobs:
           GARRYSMOD_COMMON: ${{ github.workspace }}/garrysmod_common
         run: premake5 ${{ matrix.action }}
 
-      - name: Build (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
         working-directory: module/${{ matrix.project_dir }}
         run: make config=releasewithsymbols_x86_64
+
+      # The macOS runners are arm64, but the module targets x86_64. premake emits
+      # -m64/-msse2 without an -arch, so we force clang to cross-compile to x86_64
+      # (otherwise -msse2 is rejected on the native arm64 target).
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        working-directory: module/${{ matrix.project_dir }}
+        run: make config=releasewithsymbols_x86_64 CC="clang -arch x86_64" CXX="clang++ -arch x86_64"
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
