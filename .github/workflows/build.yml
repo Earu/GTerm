@@ -75,8 +75,8 @@ jobs:
             action: gmake
             project_dir: projects/linux/gmake
             artifact: gmsv_gterm_linux64.dll
-          # macOS x64 (Intel runner for native x86_64 build)
-          - os: macos-13
+          # macOS x64
+          - os: macos-latest
             action: gmake
             project_dir: projects/macosx/gmake
             artifact: gmsv_gterm_osx64.dll

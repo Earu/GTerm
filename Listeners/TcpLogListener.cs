@@ -91,6 +91,11 @@ namespace GTerm.Listeners
                     }
                 }
                 catch (EndOfStreamException) { } // remote closed the connection
+                // gmod isn't running yet (connect refused) or the module dropped
+                // the socket: both are normal while waiting for/between sessions,
+                // so retry silently instead of spamming the console.
+                catch (SocketException) { }
+                catch (IOException) { }
                 catch (Exception ex)
                 {
                     OnError?.Invoke(this, new ErrorEventArgs(ex));
