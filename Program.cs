@@ -1,5 +1,6 @@
 ﻿using GTerm.Extensions;
 using GTerm.Listeners;
+using GTerm.MCP;
 using Spectre.Console;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -154,7 +155,7 @@ namespace GTerm
             if (Config.MCP)
             {
                 Collector = new CommandCollector(Listener, Config.MCPCollectionWindowMs);
-                MCP = new MCPServer(Collector, Config.MCPPort, Config.MCPSecret);
+                MCP = new MCPServer(Collector, Listener, Config.MCPPort, Config.MCPSecret);
                 Task.Run(() => MCP.StartAsync());
             }
         }
@@ -305,6 +306,8 @@ namespace GTerm
                     string logChunk = log.Contains('|', StringComparison.CurrentCulture) ? string.Join("|", log.Split('|').Skip(1).ToArray()) : log; // there should always be 1
                     if (!string.IsNullOrWhiteSpace(logChunk))
                     {
+                        // GTerm's own probe/result markers are plumbing, not console output.
+                        if (GTermSentinels.IsSentinel(logChunk)) return;
                         if (ShouldExcludeLog(logChunk)) return;
 
                         int currentTopCursor = Console.CursorTop;
