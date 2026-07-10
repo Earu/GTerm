@@ -72,11 +72,26 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
 3. Configure your MCP client to connect to `http://localhost:27513` (add `?secret=...` if using authentication)
 
 **Available Tools:**
-- `run_gmod_command` - Execute console commands
-- `list_gmod_directory` - Browse Garry's Mod file structure
-- `read_gmod_file` - Read text files from installation
-- `execute_lua_code` - Execute CLIENT-SIDE Lua code (if you have the permissions to do it)
-- `capture_console_output` - Monitor console output for a specified duration
+- `get_game_status` - Report whether GMod is connected, in a session, and which Lua realms can run code right now (map, gamemode, players). Works even while GMod is closed. Agents should call this first.
+- `run_gmod_command` - Execute a console command and capture its output
+- `execute_lua_code` - Execute Lua in a **required** realm (`server` or `client`). See *Realms* below
+- `validate_lua_syntax` - Compile-check Lua with the game's own `CompileString` without executing it
+- `check_game_file` - Ask the running game whether a path exists in its virtual filesystem (mounted addons/GMAs included), not just on disk
+- `reload_lua_file` - Load an edited Lua file into a realm so on-disk changes take effect
+- `capture_console_output` - Monitor console output for a duration
+- `list_gmod_directory` - Browse the Garry's Mod file structure **on disk**
+- `read_gmod_file` - Read a text file from the installation **on disk**
+- `take_screenshot` - Capture the game's screen and return it as an image (works in-game or at the menu; no `sv_allowcslua` needed)
+- `read_gmod_wiki` - Fetch a page from the Garry's Mod wiki (wiki.facepunch.com/gmod) to check a function's real signature before using it
+
+Every tool result is prefixed with a `[GTerm]` status line so the agent always knows the connection and realm state. When a precondition is not met (disconnected, wrong realm, no session), the tool returns an error explaining what to do rather than failing silently; pass `force: true` to attempt the call anyway.
+
+**Realms:** Garry's Mod runs Lua in three realms — **server** (entities, gamemode logic), **client** (HUD, rendering, input), and **menu** (main-menu UI, not reachable through GTerm). `execute_lua_code` requires you to name `server` or `client`. Which realms actually work depends on your install and what the game is doing:
+
+- **Server realm** works when a server Lua state exists — singleplayer, a listen server, or a dedicated-server install. It is unreachable at the main menu and when you are joined to a remote server.
+- **Client realm** works only when a local client exists (so not on a dedicated server) **and** `sv_allowcslua` is `1`. That convar defaults to `0`, which blocks `lua_run_cl` / `lua_openscript_cl` — the usual reason client-realm Lua "does nothing" on a public server. Set `sv_allowcslua 1` on a server you own, or use the server realm.
+
+Call `get_game_status` to see exactly which realms are reachable before running Lua.
 
 **Configuration Options:**
 ```json

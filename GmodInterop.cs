@@ -14,6 +14,12 @@ namespace GTerm
         private static Process? GetGmodProcess()
             => Process.GetProcessesByName("gmod").FirstOrDefault();
 
+        /// <summary>
+        /// Whether Garry's Mod is running at all. Distinguishes "not launched" from "launched but the
+        /// GTerm module has not connected yet", which need different advice.
+        /// </summary>
+        internal static bool IsGmodRunning() => GetGmodProcess() != null;
+
         private static bool TryGetSteamVDFPath(out string vdfPath)
         {
             try
