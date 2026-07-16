@@ -161,6 +161,7 @@ static void RunCommand(std::string cmd)
 
 	SourceSDK::FactoryLoader engine_loader("engine");
 	IVEngineServer* engine_server = engine_loader.GetInterface<IVEngineServer>(INTERFACEVERSION_VENGINESERVER);
+	if (engine_server == nullptr) return;
 	engine_server->ServerCommand(cmd.c_str());
 }
 
