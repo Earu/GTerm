@@ -30,7 +30,7 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
 1. Every tool result starts with a [GTerm] status line. READ IT. If DISCONNECTED or NO_SESSION, stop and tell the user - do not retry blindly.
 2. Call get_game_status first when unsure. It works even when disconnected.
 3. Realms. GMod runs Lua in three realms: server (entities, gamemode logic), client (HUD, rendering, input), menu (main-menu UI). execute_lua_code REQUIRES realm="client" or "server"; "menu" is unreachable by any console command and errors. Which realms work depends on where GTerm is installed and what the game is doing: server realm is unreachable at the main menu and when joined to a remote server; client realm is unreachable on a dedicated server and is blocked whenever sv_allowcslua is 0. get_game_status reports exactly which realms are reachable - trust it over assumption.
-4. Disk is not the game. read_gmod_file and list_gmod_directory read ON DISK. The running game uses a virtual filesystem including mounted addons and GMAs, and does not pick up edits until reloaded. Before assuming an edited script is live: check_game_file to confirm the game sees the path, then execute_lua_code with include("path") to load it. Editing a file changes nothing by itself.
+4. Disk vs game. read_gmod_file/list_gmod_directory read ON DISK; read_game_file/check_game_file read the RUNNING game's virtual filesystem (mounted addons, GMAs). On the client realm only locally-present files are readable. Edits do not go live until reloaded: execute_lua_code with include("path"). Editing a file changes nothing by itself.
 5. Validate before executing. validate_lua_syntax compile-checks without running anything. Prefer it over running code to see whether it parses. read_gmod_wiki fetches the real signature of a GLua function before you use it. take_screenshot returns what is on screen (works even when sv_allowcslua blocks Lua).
 6. Precondition failures return isError with a status snapshot and a one-line fix. Pass force=true only when certain, and say why.
 7. Console output is asynchronous. capture_console_output looks BACKWARDS: recent output, newest-first, instantly - call it after an action to see prints. Raise execute_lua_code's timeout for delayed prints. A command that prints nothing still succeeded.
@@ -615,6 +615,46 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
                     },
                     new
                     {
+                        name = "read_game_file",
+                        description = "Reads a file's CONTENTS from the RUNNING game's virtual filesystem — including mounted addons, Workshop GMAs and mounted games, which read_gmod_file (disk-only) cannot see. IMPORTANT: on the CLIENT realm only files the client has LOCALLY are readable (its own addons/ or a mounted Workshop addon). A file that exists only on a server you joined is NOT sent to clients as a readable file, so it returns not-readable — read it from the SERVER realm if you are hosting. On the server realm, all server-side content is readable. PRECONDITION: GMod connected and the chosen realm reachable, else returns isError.",
+                        inputSchema = new
+                        {
+                            type = "object",
+                            properties = new
+                            {
+                                path = new
+                                {
+                                    type = "string",
+                                    description = "Path as the game sees it (e.g. 'lua/autorun/foo.lua', 'materials/x.vmt'). For the GAME search path this includes the leading folder."
+                                },
+                                searchPath = new
+                                {
+                                    type = "string",
+                                    description = "Which search path to read from (default: 'GAME' = all mounted content). Others: 'LUA' (current realm's lua/), 'WORKSHOP' (mounted .gma only), 'THIRDPARTY', 'DATA', 'BSP', or a mounted addon's title."
+                                },
+                                realm = new
+                                {
+                                    type = "string",
+                                    @enum = new[] { "client", "server" },
+                                    description = "Which realm reads the file. server sees all server content; client sees only local content. Defaults to a reachable realm."
+                                },
+                                maxSizeKB = new
+                                {
+                                    type = "number",
+                                    description = "Maximum size to return in KB (default: 1024, max: 10240). Larger files are truncated with a note."
+                                },
+                                force = new
+                                {
+                                    type = "boolean",
+                                    description = "Skip precondition checks and attempt the call anyway."
+                                }
+                            },
+                            required = new[] { "path" }
+                        },
+                        annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = true }
+                    },
+                    new
+                    {
                         name = "take_screenshot",
                         description = "Captures a screenshot of the running game's screen and returns it as an image. Useful for seeing what the player currently sees — HUD, menus, the world, an error on screen. Works whether in-game or at the main menu, and does NOT require sv_allowcslua (it is not Lua). Only fails if there is no client screen (a dedicated server) or the game is not rendering (minimized). PRECONDITION: GMod connected with a client screen, else returns isError.",
                         inputSchema = new
@@ -682,6 +722,7 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
                 "capture_console_output" => HandleCaptureConsoleOutput(arguments),
                 "list_gmod_directory" => HandleListGmodDirectory(arguments),
                 "read_gmod_file" => HandleReadGmodFile(arguments),
+                "read_game_file" => await HandleReadGameFile(arguments),
                 "take_screenshot" => await HandleTakeScreenshot(arguments),
                 "read_gmod_wiki" => await HandleReadGmodWiki(arguments),
 
@@ -922,6 +963,63 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
             LocalLogger.WriteLine($"Reading file: {relativePath} (max size: {maxSizeKB}KB)");
 
             return Ok(GmodFileHelper.ReadFile(basePath, relativePath, maxSizeKB));
+        }
+
+        private async Task<object> HandleReadGameFile(JObject? arguments)
+        {
+            string? path = arguments?["path"]?.ToString();
+            if (string.IsNullOrWhiteSpace(path)) return Err("Missing required parameter: path");
+
+            string searchPath = arguments?["searchPath"]?.ToString() is { Length: > 0 } sp ? sp : "GAME";
+
+            LuaRealm realm = DefaultRealm();
+            string? rawRealm = arguments?["realm"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(rawRealm) && !TryParseRealm(rawRealm, out realm, out string? realmError))
+                return Err(realmError!);
+
+            object? gate = GateRealm(arguments, realm);
+            if (gate != null) return gate;
+
+            int maxSizeKB = arguments?["maxSizeKB"]?.Value<int>() ?? 1024;
+            if (maxSizeKB < 1) maxSizeKB = 1;
+            if (maxSizeKB > 10240) maxSizeKB = 10240;
+
+            string realmName = realm.ToString().ToLowerInvariant();
+            LocalLogger.WriteLine($"Reading game file '{path}' via {searchPath} ({realmName} realm)");
+
+            GameFileResult result = await this.LuaExecutor.ReadGameFileAsync(path, searchPath, realm, maxSizeKB * 1024);
+
+            switch (result.Outcome)
+            {
+                case GameFileOutcome.Failed:
+                    return Err(result.Error ?? "Read failed");
+
+                case GameFileOutcome.NotExecuted:
+                    return Err($"The reader never ran in the {realmName} realm. "
+                        + (realm == LuaRealm.Client
+                            ? "This is usually sv_allowcslua=0 blocking client Lua. Try realm=\"server\" if you are hosting."
+                            : "There may be no server Lua state (main menu, or you are joined to a remote server). Try realm=\"client\"."));
+
+                case GameFileOutcome.NotReadable:
+                    return Err($"The running game cannot read '{path}' from the '{searchPath}' search path in the {realmName} realm.\n\n"
+                        + (realm == LuaRealm.Client
+                            ? "Your client does not have this file locally — it is readable only if it is in your own addons/ or a mounted Workshop addon. A file that exists only on a server you joined is NOT sent to clients as a readable file. If you are hosting, try realm=\"server\"."
+                            : "The file does not exist at that path/search-path on the server. Try searchPath=\"GAME\" for all mounted content.")
+                        + "\n\nUse check_game_file to see exactly where the game can see the path.");
+
+                default:
+                    this.Status.NoteLiveActivity();
+
+                    StringBuilder sb = new();
+                    sb.AppendLine($"Read '{path}' from the '{searchPath}' search path ({realmName} realm) — {result.Size} bytes.");
+                    if (result.Truncated) sb.AppendLine($"NOTE: truncated to {maxSizeKB}KB; the file is larger. Raise maxSizeKB for more.");
+                    if (result.LooksBinary) sb.AppendLine("NOTE: this looks like a binary file; the text below may be garbled.");
+                    sb.AppendLine();
+                    sb.AppendLine("--- contents ---");
+                    sb.Append(result.Content);
+
+                    return Ok(sb.ToString());
+            }
         }
 
         private async Task<object> HandleTakeScreenshot(JObject? arguments)

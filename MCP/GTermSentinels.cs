@@ -15,6 +15,7 @@ namespace GTerm.MCP
         internal const string SyntaxOk = "SYNOK";
         internal const string SyntaxErr = "SYNERR";
         internal const string File = "FILE";
+        internal const string GameFile = "GFILE";
 
         private const string Prefix = "<<GTERM:";
         private const string HeaderEnd = ">>";

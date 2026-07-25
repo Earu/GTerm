@@ -80,6 +80,7 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
 - `capture_console_output` - Monitor console output for a duration
 - `list_gmod_directory` - Browse the Garry's Mod file structure **on disk**
 - `read_gmod_file` - Read a text file from the installation **on disk**
+- `read_game_file` - Read a file's contents from the **running game's** virtual filesystem (mounted addons, Workshop GMAs), which the on-disk reader can't see
 - `take_screenshot` - Capture the game's screen and return it as an image (works in-game or at the menu; no `sv_allowcslua` needed)
 - `read_gmod_wiki` - Fetch a page from the Garry's Mod wiki (wiki.facepunch.com/gmod) to check a function's real signature before using it
 
