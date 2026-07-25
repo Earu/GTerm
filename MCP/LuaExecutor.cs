@@ -1,3 +1,4 @@
+using Newtonsoft.Json.Linq;
 using System.Text;
 
 namespace GTerm.MCP
@@ -6,6 +7,33 @@ namespace GTerm.MCP
     {
         Client,
         Server,
+    }
+
+    internal enum GameFileOutcome
+    {
+        /// <summary>The command did not round-trip (disconnected, error, etc.).</summary>
+        Failed,
+
+        /// <summary>No result came back — the reader script never ran (e.g. sv_allowcslua on client).</summary>
+        NotExecuted,
+
+        /// <summary>The game ran the reader but file.Read returned nil — not readable in this realm.</summary>
+        NotReadable,
+
+        /// <summary>Contents retrieved.</summary>
+        Ok,
+    }
+
+    internal sealed class GameFileResult
+    {
+        public GameFileOutcome Outcome { get; init; }
+        public string? Content { get; init; }
+        public long Size { get; init; }
+        public bool Truncated { get; init; }
+        public bool LooksBinary { get; init; }
+        public string? Error { get; init; }
+
+        internal static GameFileResult Fail(string error) => new() { Outcome = GameFileOutcome.Failed, Error = error };
     }
 
     internal class LuaExecutor
@@ -52,6 +80,89 @@ namespace GTerm.MCP
             return RunScriptAsync(BuildFileCheck(path), realm, [GTermSentinels.File], collectionWindowMs, cancellationToken);
         }
 
+        /// <summary>
+        /// Reads a file's contents from the running game's virtual filesystem. The game reads the file
+        /// and writes it to data/ (a "relay"); GTerm then reads that from disk. This sidesteps the
+        /// 4096-char cap on print() — the console only carries a tiny status sentinel, never the content.
+        /// </summary>
+        public async Task<GameFileResult> ReadGameFileAsync(string path, string searchPath, LuaRealm realm, int maxBytes, int? collectionWindowMs = null, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return GameFileResult.Fail("Path cannot be empty");
+
+            if (!GmodInterop.TryGetGmodPath(out string gmodPath, false))
+                return GameFileResult.Fail("Could not find Garry's Mod installation path");
+
+            // file.Write forces the name lowercase; the "N" GUID format is already lowercase, so the
+            // path GTerm reads back matches exactly.
+            string nonce = Guid.NewGuid().ToString("N");
+            string relayRel = $"gterm/read_{nonce}.txt";  // relative to data/
+            string relayDir = Path.Combine(gmodPath, "garrysmod", "data", "gterm");
+            string relayDisk = Path.Combine(relayDir, $"read_{nonce}.txt");
+
+            // Clear any relay left behind by a crash mid-read (the finally below handles the normal case).
+            SweepOrphans(relayDir, "read_*.txt");
+
+            try
+            {
+                LuaScriptResult run = await RunScriptAsync(
+                    BuildReadGameFile(path, searchPath, relayRel), realm, [GTermSentinels.GameFile], collectionWindowMs, cancellationToken);
+
+                if (!run.Success)
+                    return GameFileResult.Fail(run.Error ?? "Read command failed");
+
+                if (!run.TryGetSentinel(GTermSentinels.GameFile, out Sentinel sentinel))
+                    return new GameFileResult { Outcome = GameFileOutcome.NotExecuted };
+
+                JObject info = JObject.Parse(sentinel.Payload);
+                bool read = info["read"]?.Value<bool>() ?? false;
+                if (!read)
+                    return new GameFileResult { Outcome = GameFileOutcome.NotReadable };
+
+                bool wrote = info["wrote"]?.Value<bool>() ?? false;
+                long size = info["size"]?.Value<long>() ?? 0;
+
+                if (!wrote || !File.Exists(relayDisk))
+                    return GameFileResult.Fail("The game read the file but could not relay it (file.Write failed or the relay path did not resolve on disk).");
+
+                // Read only up to maxBytes+1 so we can tell whether it was truncated without loading a huge file.
+                await using FileStream fs = new(relayDisk, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                int cap = maxBytes + 1;
+                byte[] buffer = new byte[cap];
+                int got = await fs.ReadAsync(buffer.AsMemory(0, cap), cancellationToken);
+
+                bool truncated = got > maxBytes;
+                int keep = truncated ? maxBytes : got;
+                bool binary = LooksBinary(buffer, keep);
+                string content = System.Text.Encoding.UTF8.GetString(buffer, 0, keep);
+
+                return new GameFileResult
+                {
+                    Outcome = GameFileOutcome.Ok,
+                    Content = content,
+                    Size = size,
+                    Truncated = truncated,
+                    LooksBinary = binary,
+                };
+            }
+            catch (Exception ex)
+            {
+                return GameFileResult.Fail($"Exception: {ex.Message}");
+            }
+            finally
+            {
+                TryDelete(relayDisk);
+            }
+        }
+
+        private static bool LooksBinary(byte[] data, int length)
+        {
+            for (int i = 0; i < length; i++)
+                if (data[i] == 0) return true;
+
+            return false;
+        }
+
         private async Task<LuaScriptResult> RunScriptAsync(
             string luaSource,
             LuaRealm realm,
@@ -75,7 +186,7 @@ namespace GTerm.MCP
                     Directory.CreateDirectory(gtermDir);
                 }
 
-                SweepOrphans(gtermDir);
+                SweepOrphans(gtermDir, "*.lua");
 
                 LocalLogger.WriteLine($"Writing Lua script to: {filePath}");
                 await File.WriteAllTextAsync(filePath, luaSource, cancellationToken);
@@ -181,19 +292,38 @@ namespace GTerm.MCP
             return sb.ToString();
         }
 
-        private static void SweepOrphans(string gtermDir)
+        private static string BuildReadGameFile(string path, string searchPath, string relayRel)
+        {
+            StringBuilder sb = new();
+            sb.Append("local __p = ").AppendLine(GTermSentinels.LuaLiteral(path));
+            sb.Append("local __sp = ").AppendLine(GTermSentinels.LuaLiteral(searchPath));
+            sb.AppendLine("local __d = file.Read(__p, __sp)");
+            sb.AppendLine("if __d == nil then");
+            sb.AppendLine($"  {GTermSentinels.LuaEmit(GTermSentinels.GameFile, "util.TableToJSON({read=false})")}");
+            sb.AppendLine("else");
+            sb.AppendLine("  file.CreateDir(\"gterm\")");
+            sb.Append("  local __w = file.Write(").Append(GTermSentinels.LuaLiteral(relayRel)).AppendLine(", __d)");
+            sb.AppendLine($"  {GTermSentinels.LuaEmit(GTermSentinels.GameFile, "util.TableToJSON({read=true, wrote=__w == true, size=#__d})")}");
+            sb.AppendLine("end");
+
+            return sb.ToString();
+        }
+
+        private static void SweepOrphans(string dir, string pattern)
         {
             try
             {
+                if (!Directory.Exists(dir)) return;
+
                 DateTime cutoff = DateTime.Now - OrphanAge;
-                foreach (string orphan in Directory.EnumerateFiles(gtermDir, "*.lua"))
+                foreach (string orphan in Directory.EnumerateFiles(dir, pattern))
                 {
                     if (File.GetLastWriteTime(orphan) < cutoff) TryDelete(orphan);
                 }
             }
             catch (Exception ex)
             {
-                LocalLogger.WriteLine($"Warning: failed to sweep {gtermDir}: {ex.Message}");
+                LocalLogger.WriteLine($"Warning: failed to sweep {dir}: {ex.Message}");
             }
         }
 
