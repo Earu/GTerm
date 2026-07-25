@@ -28,7 +28,10 @@ namespace GTerm.MCP
             if (string.IsNullOrWhiteSpace(luaCode))
                 return Task.FromResult(Failed("Lua code cannot be empty"));
 
-            return RunScriptAsync(BuildRunner(luaCode), realm, [GTermSentinels.LuaOk, GTermSentinels.LuaErr], collectionWindowMs, cancellationToken);
+            // Stop early on an error, but on success keep collecting for the whole window so late
+            // asynchronous prints (timers, hooks, callbacks) are captured — that is what `timeout` is for.
+            return RunScriptAsync(BuildRunner(luaCode), realm, [GTermSentinels.LuaOk, GTermSentinels.LuaErr], collectionWindowMs, cancellationToken,
+                earlyExitMarkers: [GTermSentinels.LuaErr]);
         }
 
         /// <summary>Compile-checks Lua without executing it.</summary>
@@ -49,21 +52,13 @@ namespace GTerm.MCP
             return RunScriptAsync(BuildFileCheck(path), realm, [GTermSentinels.File], collectionWindowMs, cancellationToken);
         }
 
-        /// <summary>Loads an existing Lua file into the running game so on-disk edits take effect.</summary>
-        public Task<LuaScriptResult> ReloadLuaFileAsync(string luaPath, LuaRealm realm, int? collectionWindowMs = null, CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(luaPath))
-                return Task.FromResult(Failed("Lua path cannot be empty"));
-
-            return RunScriptAsync(BuildReload(luaPath), realm, [GTermSentinels.ReloadOk, GTermSentinels.ReloadErr], collectionWindowMs, cancellationToken);
-        }
-
         private async Task<LuaScriptResult> RunScriptAsync(
             string luaSource,
             LuaRealm realm,
             IReadOnlyCollection<string> completionMarkers,
             int? collectionWindowMs,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IReadOnlyCollection<string>? earlyExitMarkers = null)
         {
             if (!GmodInterop.TryGetGmodPath(out string gmodPath, false))
                 return Failed("Could not find Garry's Mod installation path");
@@ -93,7 +88,11 @@ namespace GTerm.MCP
 
                 LocalLogger.WriteLine($"Executing command: {command}");
 
-                CommandResult result = await this.Collector.ExecuteCommandAsync(command, collectionWindowMs, completionMarkers, cancellationToken: cancellationToken);
+                // completionMarkers proves the script ran; earlyExitMarkers decides when to stop
+                // collecting. They differ for execute_lua_code: it stops early on an error but, on
+                // success, keeps listening for the full window so asynchronous prints are captured.
+                CommandResult result = await this.Collector.ExecuteCommandAsync(
+                    command, collectionWindowMs, earlyExitMarkers ?? completionMarkers, cancellationToken: cancellationToken);
 
                 bool executed = result.Success && result.Sentinels.Any(s => completionMarkers.Contains(s.Marker));
 
@@ -178,17 +177,6 @@ namespace GTerm.MCP
             StringBuilder sb = new();
             sb.Append("local __p = ").AppendLine(GTermSentinels.LuaLiteral(path));
             sb.AppendLine(GTermSentinels.LuaEmit(GTermSentinels.File, payload));
-
-            return sb.ToString();
-        }
-
-        private static string BuildReload(string luaPath)
-        {
-            StringBuilder sb = new();
-            sb.Append("local __p = ").AppendLine(GTermSentinels.LuaLiteral(luaPath));
-            sb.AppendLine("local __ok, __err = pcall(include, __p)");
-            sb.AppendLine($"if __ok then {GTermSentinels.LuaEmit(GTermSentinels.ReloadOk, "__p")}");
-            sb.AppendLine($"else {GTermSentinels.LuaEmit(GTermSentinels.ReloadErr, "tostring(__err)")} end");
 
             return sb.ToString();
         }

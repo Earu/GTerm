@@ -30,15 +30,16 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
 1. Every tool result starts with a [GTerm] status line. READ IT. If DISCONNECTED or NO_SESSION, stop and tell the user - do not retry blindly.
 2. Call get_game_status first when unsure. It works even when disconnected.
 3. Realms. GMod runs Lua in three realms: server (entities, gamemode logic), client (HUD, rendering, input), menu (main-menu UI). execute_lua_code REQUIRES realm="client" or "server"; "menu" is unreachable by any console command and errors. Which realms work depends on where GTerm is installed and what the game is doing: server realm is unreachable at the main menu and when joined to a remote server; client realm is unreachable on a dedicated server and is blocked whenever sv_allowcslua is 0. get_game_status reports exactly which realms are reachable - trust it over assumption.
-4. Disk is not the game. read_gmod_file and list_gmod_directory read ON DISK. The running game uses a virtual filesystem including mounted addons and GMAs, and does not pick up edits until a file is reloaded. Before assuming an edited script is live: check_game_file to confirm the game sees the path, then reload_lua_file to load it into a realm. Editing a file changes nothing by itself.
+4. Disk is not the game. read_gmod_file and list_gmod_directory read ON DISK. The running game uses a virtual filesystem including mounted addons and GMAs, and does not pick up edits until reloaded. Before assuming an edited script is live: check_game_file to confirm the game sees the path, then execute_lua_code with include("path") to load it. Editing a file changes nothing by itself.
 5. Validate before executing. validate_lua_syntax compile-checks without running anything. Prefer it over running code to see whether it parses. read_gmod_wiki fetches the real signature of a GLua function before you use it. take_screenshot returns what is on screen (works even when sv_allowcslua blocks Lua).
 6. Precondition failures return isError with a status snapshot and a one-line fix. Pass force=true only when certain, and say why.
-7. Console output is asynchronous; unrelated lines interleave. A command that prints nothing still succeeded.
+7. Console output is asynchronous. capture_console_output looks BACKWARDS: recent output, newest-first, instantly - call it after an action to see prints. Raise execute_lua_code's timeout for delayed prints. A command that prints nothing still succeeded.
 """;
 
         private readonly CommandCollector Collector;
         private readonly LuaExecutor LuaExecutor;
         private readonly ScreenshotCapturer Screenshot;
+        private readonly ConsoleHistory History;
         private readonly ILogListener Listener;
         private readonly GameStatusProbe Status;
         private readonly int Port;
@@ -51,6 +52,7 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
             this.Listener = listener;
             this.LuaExecutor = new LuaExecutor(collector);
             this.Screenshot = new ScreenshotCapturer(collector);
+            this.History = new ConsoleHistory(listener);
             this.Status = new GameStatusProbe(listener, collector);
             this.Port = port;
             this.Secret = secret;
@@ -472,7 +474,7 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
                                 timeout = new
                                 {
                                     type = "number",
-                                    description = "Seconds to collect output (default: 1, min: 0.5, max: 30). Execution returns as soon as the code finishes."
+                                    description = "Seconds to KEEP LISTENING for console output after your code runs (default: 1, min: 0.5, max: 30). Errors return immediately, but on success the tool keeps collecting for this long — RAISE IT to capture prints that appear later, e.g. from timer.Simple, hooks, coroutines, net or HTTP callbacks. For output even later than this, call capture_console_output afterward."
                                 },
                                 force = new
                                 {
@@ -546,57 +548,22 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
                     },
                     new
                     {
-                        name = "reload_lua_file",
-                        description = "Loads an existing Lua file INTO the running game so edits you made on disk take effect. Editing a file changes nothing by itself. lua_path is the path as Lua's include() sees it — relative to a lua/ root, e.g. 'autorun/foo.lua' — NOT a disk path. The realm argument is REQUIRED. Reloading a file re-runs it: side effects like hook registration may duplicate. PRECONDITION: GMod connected and the chosen realm reachable, else returns isError.",
-                        inputSchema = new
-                        {
-                            type = "object",
-                            properties = new
-                            {
-                                lua_path = new
-                                {
-                                    type = "string",
-                                    description = "Path relative to a lua/ root, as include() resolves it (e.g. 'autorun/foo.lua')."
-                                },
-                                realm = new
-                                {
-                                    type = "string",
-                                    @enum = new[] { "client", "server" },
-                                    description = "REQUIRED. Which realm loads the file."
-                                },
-                                force = new
-                                {
-                                    type = "boolean",
-                                    description = "Skip precondition checks and attempt the call anyway."
-                                }
-                            },
-                            required = new[] { "lua_path", "realm" }
-                        },
-                        annotations = new { readOnlyHint = false, destructiveHint = true, idempotentHint = false, openWorldHint = true }
-                    },
-                    new
-                    {
                         name = "capture_console_output",
-                        description = "Captures all Garry's Mod console output for a duration. Useful for monitoring ongoing events, server messages, or debugging. Starts collecting immediately and returns everything printed during the window. GTerm's own internal probe lines are filtered out. PRECONDITION: GMod must be connected, else returns isError.",
+                        description = "Returns the most recent Garry's Mod console output from GTerm's live scrollback buffer, NEWEST LINE FIRST, immediately. This looks BACKWARDS at what already printed — call it right after running a command or Lua to see the output (including asynchronous prints from timers, hooks and callbacks) without racing a capture window. It does not wait or block. GTerm's own internal probe lines are filtered out.",
                         inputSchema = new
                         {
                             type = "object",
                             properties = new
                             {
-                                duration = new
+                                lines = new
                                 {
                                     type = "number",
-                                    description = "Seconds to capture console output (default: 5, min: 1, max: 60)"
-                                },
-                                force = new
-                                {
-                                    type = "boolean",
-                                    description = "Skip the connection precondition check and attempt the call anyway."
+                                    description = "How many recent lines to return, newest first (default: 50, max: 500)."
                                 }
                             },
                             required = new string[] { }
                         },
-                        annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = false, openWorldHint = true }
+                        annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = true }
                     },
                     new
                     {
@@ -625,7 +592,7 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
                     new
                     {
                         name = "read_gmod_file",
-                        description = "Reads a text file from the Garry's Mod installation ON DISK. This is the disk copy: the running game may hold a different, older, or simply unloaded version, and edits you write here do not take effect until the file is reloaded. Use check_game_file to confirm the game can see a path, and reload_lua_file to make an edit live.",
+                        description = "Reads a text file from the Garry's Mod installation ON DISK. This is the disk copy: the running game may hold a different, older, or simply unloaded version, and edits you write here do not take effect until the file is reloaded. Use check_game_file to confirm the game can see a path, and execute_lua_code with include(\"path\") to make an edit live.",
                         inputSchema = new
                         {
                             type = "object",
@@ -712,8 +679,7 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
                 "execute_lua_code" => await HandleExecuteLuaCode(arguments),
                 "validate_lua_syntax" => await HandleValidateLuaSyntax(arguments),
                 "check_game_file" => await HandleCheckGameFile(arguments),
-                "reload_lua_file" => await HandleReloadLuaFile(arguments),
-                "capture_console_output" => await HandleCaptureConsoleOutput(arguments),
+                "capture_console_output" => HandleCaptureConsoleOutput(arguments),
                 "list_gmod_directory" => HandleListGmodDirectory(arguments),
                 "read_gmod_file" => HandleReadGmodFile(arguments),
                 "take_screenshot" => await HandleTakeScreenshot(arguments),
@@ -887,58 +853,33 @@ GTerm bridges to a running Garry's Mod via its console command buffer. Nothing w
             return Ok(sb.ToString());
         }
 
-        private async Task<object> HandleReloadLuaFile(JObject? arguments)
+
+        private object HandleCaptureConsoleOutput(JObject? arguments)
         {
-            string? luaPath = arguments?["lua_path"]?.ToString();
-            if (string.IsNullOrWhiteSpace(luaPath)) return Err("Missing required parameter: lua_path");
+            int lines = arguments?["lines"]?.Value<int>() ?? 50;
+            if (lines < 1) lines = 1;
+            if (lines > 500) lines = 500;
 
-            if (!TryParseRealm(arguments?["realm"]?.ToString(), out LuaRealm realm, out string? realmError))
-                return Err(realmError!);
+            // Read the backlog instead of waiting forward: the lines the caller wants have usually
+            // already been printed, so returning recent history (newest first) never races them.
+            List<OutputLine> recent = this.History.GetRecent(lines);
 
-            object? gate = GateRealm(arguments, realm);
-            if (gate != null) return gate;
+            LocalLogger.WriteLine($"Returning {recent.Count} recent console line(s) (newest first)");
 
-            LuaScriptResult result = await this.LuaExecutor.ReloadLuaFileAsync(luaPath, realm);
-            if (!result.Success) return Err(result.Error ?? "Reload failed");
+            StringBuilder sb = new();
+            sb.AppendLine("Recent Console Output (most recent first)");
+            sb.AppendLine("=========================================");
+            sb.AppendLine($"Showing {recent.Count} line(s) (buffer holds {this.History.Count}, requested up to {lines}).");
+            sb.AppendLine();
 
-            if (result.TryGetSentinel(GTermSentinels.ReloadErr, out Sentinel error))
+            if (recent.Count == 0)
             {
-                return Err($"Could not load '{luaPath}' into the {realm.ToString().ToLowerInvariant()} realm: {error.Payload}\n\n"
-                    + "Check the path with check_game_file — include() resolves relative to a lua/ root, not a disk path.");
+                sb.AppendLine("(console history is empty — GMod may not be connected, or nothing has printed yet)");
             }
-
-            if (!result.Executed) return Err(DidNotExecute(realm, result));
-
-            this.Status.NoteLiveActivity();
-
-            StringBuilder sb = new();
-            sb.AppendLine($"Loaded '{luaPath}' into the {realm.ToString().ToLowerInvariant()} realm.");
-            sb.AppendLine("Note: the file was re-run, so any side effects (hooks, timers, entity registration) happened again.");
-            sb.AppendLine();
-            AppendOutput(sb, result.Output, "(the file printed nothing)");
-
-            return Ok(sb.ToString());
-        }
-
-        private async Task<object> HandleCaptureConsoleOutput(JObject? arguments)
-        {
-            object? gate = GateConnection(arguments);
-            if (gate != null) return gate;
-
-            int durationMs = ClampWindowMs(arguments, "duration", 5.0, 1, 60);
-
-            LocalLogger.WriteLine($"Capturing console output for {durationMs}ms");
-
-            CommandResult result = await this.Collector.CaptureConsoleAsync(durationMs);
-            if (!result.Success) return Err(result.Error ?? "Console capture failed");
-
-            StringBuilder sb = new();
-            sb.AppendLine("Console Capture Result");
-            sb.AppendLine("======================");
-            sb.AppendLine($"Duration: {durationMs / 1000.0:F1}s ({result.CollectionDurationMs:F0}ms actual)");
-            sb.AppendLine($"Lines Captured: {result.Output.Count}");
-            sb.AppendLine();
-            AppendOutput(sb, result.Output, "(no output captured during this time)");
+            else
+            {
+                foreach (OutputLine line in recent) sb.Append($"[{line.Timestamp}] {line.Message}");
+            }
 
             return Ok(sb.ToString());
         }
