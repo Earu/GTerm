@@ -77,7 +77,6 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
 - `execute_lua_code` - Execute Lua in a **required** realm (`server` or `client`).
 - `validate_lua_syntax` - Compile-check Lua with the game's own `CompileString` without executing it
 - `check_game_file` - Ask the running game whether a path exists in its virtual filesystem (mounted addons/GMAs included), not just on disk
-- `reload_lua_file` - Load an edited Lua file into a realm so on-disk changes take effect
 - `capture_console_output` - Monitor console output for a duration
 - `list_gmod_directory` - Browse the Garry's Mod file structure **on disk**
 - `read_gmod_file` - Read a text file from the installation **on disk**

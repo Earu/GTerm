@@ -168,59 +168,6 @@ namespace GTerm.MCP
             }
         }
 
-        public async Task<CommandResult> CaptureConsoleAsync(int durationMs, CancellationToken cancellationToken = default)
-        {
-            string label = $"capture_{durationMs}ms";
-
-            if (!this.Listener.IsConnected)
-            {
-                return new CommandResult { Success = false, Command = label, Error = DisconnectedError };
-            }
-
-            lock (this.Locker)
-            {
-                if (this.IsCollecting)
-                {
-                    return new CommandResult
-                    {
-                        Success = false,
-                        Command = label,
-                        Error = "Another command or capture is currently in progress"
-                    };
-                }
-
-                BeginCollecting(skipFirstOutputWait: true);
-            }
-
-            try
-            {
-                LocalLogger.WriteLine($"Capturing console output for {durationMs}ms");
-                await Task.Delay(durationMs, cancellationToken);
-
-                (List<OutputLine> output, List<Sentinel> sentinels, double duration, bool produced) = Drain();
-
-                LocalLogger.WriteLine($"Capture completed. Collected {output.Count} output lines in {duration:F0}ms");
-
-                return new CommandResult
-                {
-                    Success = true,
-                    Command = label,
-                    Output = output,
-                    Sentinels = sentinels,
-                    ProducedOutput = produced,
-                    CollectionDurationMs = duration,
-                };
-            }
-            catch (Exception ex)
-            {
-                return new CommandResult { Success = false, Command = label, Error = $"Exception: {ex.Message}" };
-            }
-            finally
-            {
-                EndCollecting();
-            }
-        }
-
         /// <summary>
         /// Sends a console command and collects what the game prints back.
         /// </summary>
