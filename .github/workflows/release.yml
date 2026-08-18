@@ -1,0 +1,99 @@
+name: Release
+
+# Publishing a tag builds the three executables and attaches them to its release,
+# under the same asset names every previous release has used.
+on:
+  push:
+    tags:
+      - 'V*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and attach binaries to'
+        required: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            runtime: linux-x64
+            binary: GTerm
+            asset: gterm_linux
+          - os: windows-latest
+            runtime: win-x64
+            binary: GTerm.exe
+            asset: gterm.exe
+          - os: macos-latest
+            runtime: osx-x64
+            binary: GTerm
+            asset: gterm_osx
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Publish executable
+        run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -o ./publish
+
+      # Released under the same names as every previous release, so an existing
+      # download link or script keeps working.
+      - name: Name the asset
+        shell: bash
+        run: mv "./publish/${{ matrix.binary }}" "./publish/${{ matrix.asset }}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: './publish/${{ matrix.asset }}'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ./publish/${{ matrix.asset }}
+
+  release:
+    name: Attach to release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download built executables
+        uses: actions/download-artifact@v4
+        with:
+          path: ./assets
+          merge-multiple: true
+
+      # Only ever adds assets. Release notes are written by hand and are left alone.
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "GTerm" --generate-notes
+          fi
+
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            ./assets/gterm_linux ./assets/gterm.exe ./assets/gterm_osx
