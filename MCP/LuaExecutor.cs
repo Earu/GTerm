@@ -36,6 +36,44 @@ namespace GTerm.MCP
         internal static GameFileResult Fail(string error) => new() { Outcome = GameFileOutcome.Failed, Error = error };
     }
 
+    internal enum ScreenCaptureOutcome
+    {
+        /// <summary>The command did not round-trip (disconnected, error, etc.).</summary>
+        Failed,
+
+        /// <summary>No sentinel came back: the capture script never ran, or no frame was ever rendered.</summary>
+        NotExecuted,
+
+        /// <summary>The hook ran but render.Capture refused (see <see cref="ScreenCaptureResult.Error"/>).</summary>
+        NotCaptured,
+
+        /// <summary>Pixels retrieved.</summary>
+        Ok,
+    }
+
+    internal sealed class ScreenCaptureResult
+    {
+        public ScreenCaptureOutcome Outcome { get; init; }
+        public byte[]? Jpeg { get; init; }
+
+        /// <summary>The game's real ScrW()/ScrH(), always reported so a caller can re-aim.</summary>
+        public int ScreenWidth { get; init; }
+        public int ScreenHeight { get; init; }
+
+        /// <summary>The rectangle actually captured, after the game clamped it to the frame.</summary>
+        public int RectX { get; init; }
+        public int RectY { get; init; }
+        public int RectWidth { get; init; }
+        public int RectHeight { get; init; }
+
+        /// <summary>The requested rectangle did not fit and had to be moved or shrunk.</summary>
+        public bool Clamped { get; init; }
+
+        public string? Error { get; init; }
+
+        internal static ScreenCaptureResult Fail(string error) => new() { Outcome = ScreenCaptureOutcome.Failed, Error = error };
+    }
+
     internal class LuaExecutor
     {
         private readonly CommandCollector Collector;
@@ -148,6 +186,93 @@ namespace GTerm.MCP
             catch (Exception ex)
             {
                 return GameFileResult.Fail($"Exception: {ex.Message}");
+            }
+            finally
+            {
+                TryDelete(relayDisk);
+            }
+        }
+
+        /// <summary>
+        /// Grabs a rectangle of the client's screen with render.Capture and relays it through data/,
+        /// the same trick ReadGameFileAsync uses to dodge print()'s size cap. Deliberately not the
+        /// engine's `jpeg` command: that one makes Steam save a copy into the user's screenshot
+        /// library on every single call, and it cannot capture a sub-rectangle.
+        /// </summary>
+        public async Task<ScreenCaptureResult> CaptureScreenAsync(int x, int y, int width, int height, int quality, int? collectionWindowMs = null, CancellationToken cancellationToken = default)
+        {
+            if (!GmodInterop.TryGetGmodPath(out string gmodPath, false))
+                return ScreenCaptureResult.Fail("Could not find Garry's Mod installation path");
+
+            string nonce = Guid.NewGuid().ToString("N");
+            string relayRel = $"gterm/shot_{nonce}.jpg";  // relative to data/
+            string relayDir = Path.Combine(gmodPath, "garrysmod", "data", "gterm");
+            string relayDisk = Path.Combine(relayDir, $"shot_{nonce}.jpg");
+
+            SweepOrphans(relayDir, "shot_*.jpg");
+
+            try
+            {
+                LuaScriptResult run = await RunScriptAsync(
+                    BuildCaptureScreen(x, y, width, height, quality, relayRel), LuaRealm.Client,
+                    [GTermSentinels.Shot], collectionWindowMs, cancellationToken);
+
+                if (!run.Success)
+                    return ScreenCaptureResult.Fail(run.Error ?? "Capture command failed");
+
+                // The capture lands inside a PostRender hook, so a game that is not drawing frames
+                // (minimised, paused at a loading screen) never emits the sentinel at all.
+                if (!run.TryGetSentinel(GTermSentinels.Shot, out Sentinel sentinel))
+                    return new ScreenCaptureResult { Outcome = ScreenCaptureOutcome.NotExecuted };
+
+                JObject info = JObject.Parse(sentinel.Payload);
+                int screenW = info["sw"]?.Value<int>() ?? 0;
+                int screenH = info["sh"]?.Value<int>() ?? 0;
+                int rectX = info["x"]?.Value<int>() ?? 0;
+                int rectY = info["y"]?.Value<int>() ?? 0;
+                int rectW = info["w"]?.Value<int>() ?? 0;
+                int rectH = info["h"]?.Value<int>() ?? 0;
+                bool clamped = info["clamped"]?.Value<bool>() ?? false;
+                bool captured = info["ok"]?.Value<bool>() ?? false;
+
+                if (!captured)
+                {
+                    return new ScreenCaptureResult
+                    {
+                        Outcome = ScreenCaptureOutcome.NotCaptured,
+                        ScreenWidth = screenW,
+                        ScreenHeight = screenH,
+                        Error = info["err"]?.ToString() ?? "render.Capture returned no data",
+                    };
+                }
+
+                if (!File.Exists(relayDisk))
+                {
+                    return new ScreenCaptureResult
+                    {
+                        Outcome = ScreenCaptureOutcome.NotCaptured,
+                        ScreenWidth = screenW,
+                        ScreenHeight = screenH,
+                        Error = "The game captured the frame but could not relay it (file.Write failed or the relay path did not resolve on disk).",
+                    };
+                }
+
+                return new ScreenCaptureResult
+                {
+                    Outcome = ScreenCaptureOutcome.Ok,
+                    Jpeg = await File.ReadAllBytesAsync(relayDisk, cancellationToken),
+                    ScreenWidth = screenW,
+                    ScreenHeight = screenH,
+                    RectX = rectX,
+                    RectY = rectY,
+                    RectWidth = rectW,
+                    RectHeight = rectH,
+                    Clamped = clamped,
+                };
+            }
+            catch (Exception ex)
+            {
+                return ScreenCaptureResult.Fail($"Exception: {ex.Message}");
             }
             finally
             {
@@ -305,6 +430,54 @@ namespace GTerm.MCP
             sb.Append("  local __w = file.Write(").Append(GTermSentinels.LuaLiteral(relayRel)).AppendLine(", __d)");
             sb.AppendLine($"  {GTermSentinels.LuaEmit(GTermSentinels.GameFile, "util.TableToJSON({read=true, wrote=__w == true, size=#__d})")}");
             sb.AppendLine("end");
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// render.Capture only works inside a rendering pass, so the grab is deferred to a one-shot
+        /// PostRender hook, late enough that HUD, vgui and viewmodels are all in the frame.
+        /// The rectangle is clamped HERE rather than in C# because an out-of-bounds rect makes
+        /// render.Capture hand back nil through a *successful* pcall, which would look like a
+        /// mystery failure. Clamping in the game is also what lets us report the real ScrW()/ScrH().
+        /// A width or height of 0 means "the whole screen".
+        /// </summary>
+        private static string BuildCaptureScreen(int x, int y, int width, int height, int quality, string relayRel)
+        {
+            const string payload =
+                "util.TableToJSON({" +
+                "sw=__sw, sh=__sh," +
+                "x=__x, y=__y, w=__w, h=__h," +
+                "clamped=__clamped," +
+                "ok=__data ~= nil," +
+                "err=__err" +
+                "})";
+
+            StringBuilder sb = new();
+            sb.AppendLine($"local __hook = \"gterm_cap_{Guid.NewGuid():N}\"");
+            sb.AppendLine($"local __rx, __ry, __rw, __rh, __q = {x}, {y}, {width}, {height}, {quality}");
+            sb.AppendLine("hook.Add(\"PostRender\", __hook, function()");
+            sb.AppendLine("  hook.Remove(\"PostRender\", __hook)");
+            sb.AppendLine("  local __sw, __sh = ScrW(), ScrH()");
+            sb.AppendLine("  local __w0 = __rw > 0 and __rw or __sw");
+            sb.AppendLine("  local __h0 = __rh > 0 and __rh or __sh");
+            sb.AppendLine("  local __x = math.Clamp(math.floor(__rx), 0, math.max(__sw - 1, 0))");
+            sb.AppendLine("  local __y = math.Clamp(math.floor(__ry), 0, math.max(__sh - 1, 0))");
+            sb.AppendLine("  local __w = math.Clamp(math.floor(__w0), 1, __sw - __x)");
+            sb.AppendLine("  local __h = math.Clamp(math.floor(__h0), 1, __sh - __y)");
+            sb.AppendLine("  local __clamped = __x ~= __rx or __y ~= __ry or __w ~= __w0 or __h ~= __h0");
+            sb.AppendLine("  local __ok, __data = pcall(render.Capture, {");
+            sb.AppendLine("    format = \"jpeg\", x = __x, y = __y, w = __w, h = __h, quality = __q, alpha = false");
+            sb.AppendLine("  })");
+            sb.AppendLine("  local __err = nil");
+            sb.AppendLine("  if not __ok then __err = tostring(__data) __data = nil");
+            sb.AppendLine("  elseif __data == nil then __err = \"render.Capture returned no data for that rectangle\" end");
+            sb.AppendLine("  if __data ~= nil then");
+            sb.AppendLine("    file.CreateDir(\"gterm\")");
+            sb.Append("    file.Write(").Append(GTermSentinels.LuaLiteral(relayRel)).AppendLine(", __data)");
+            sb.AppendLine("  end");
+            sb.AppendLine($"  {GTermSentinels.LuaEmit(GTermSentinels.Shot, payload)}");
+            sb.AppendLine("end)");
 
             return sb.ToString();
         }

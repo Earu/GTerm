@@ -23,5 +23,13 @@ namespace GTerm.Listeners
         internal string Group { get; private set; }
         internal Color Color { get; private set; }
         internal string Message { get; set; }
+
+        /// <summary>
+        /// Pre-rendered Spectre markup for <see cref="Message"/>, used instead of escaping it and
+        /// painting it a single colour. This is how GTerm's own lines get syntax highlighting, which
+        /// game output cannot have because it arrives as plain text. Only valid on a single-line
+        /// message, and must carry the trailing newline itself.
+        /// </summary>
+        internal string? MarkupOverride { get; set; }
     }
 }
