@@ -81,10 +81,15 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
 - `list_gmod_directory` - Browse the Garry's Mod file structure **on disk**
 - `read_gmod_file` - Read a text file from the installation **on disk**
 - `read_game_file` - Read a file's contents from the **running game's** virtual filesystem (mounted addons, Workshop GMAs), which the on-disk reader can't see
-- `take_screenshot` - Capture the game's screen and return it as an image (works in-game or at the menu; no `sv_allowcslua` needed)
+- `take_screenshot_region` - Capture one rectangle of the screen and return it enlarged, so a HUD element, viewmodel or panel is actually legible. Preferred over the full-screen shot for anything specific
+- `take_screenshot` - Capture the whole screen. Last resort: prove things with Lua state and arithmetic first
 - `read_gmod_wiki` - Fetch a page from the Garry's Mod wiki (wiki.facepunch.com/gmod) to check a function's real signature before using it
 
 Every tool result is prefixed with a `[GTerm]` status line so the agent always knows the connection and realm state. When a precondition is not met (disconnected, wrong realm, no session), the tool returns an error explaining what to do rather than failing silently; pass `force: true` to attempt the call anyway.
+
+**Seeing what an agent is doing.** MCP clients show the tool name but usually not the arguments, so GTerm surfaces them itself: every tool call prints a magenta `[agent]` line in GTerm's console *before* it runs. Lua is shown in full on its own lines with Monokai syntax highlighting, and console commands are highlighted inline.
+
+Both screenshot tools capture through Lua's `render.Capture`, so they need `sv_allowcslua 1` and a reachable client realm. That is deliberate: the engine's `jpeg` command works without Lua, but makes Steam save a full-resolution copy plus a thumbnail into your screenshot library on *every* call, and can only ever grab the whole screen.
 
 **Configuration Options:**
 ```json

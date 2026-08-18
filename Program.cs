@@ -244,10 +244,87 @@ namespace GTerm
                 }
             });
 
+        /// <summary>
+        /// Shows what an MCP agent just did, in GTerm's own console.
+        ///
+        /// An MCP client displays the tool name but usually not the arguments, so from the chat window
+        /// alone you cannot tell which command or which Lua an agent pushed into your game. GTerm is
+        /// already the window you watch the console in, so it is the honest place to surface this, and
+        /// unlike the client it has no truncation or rendering rules to work around.
+        ///
+        /// Routed through OnLog so it inherits the cursor handling that keeps typing stable, plus the
+        /// archiving and API fan-out that game output gets.
+        /// </summary>
+        internal enum AgentDetail
+        {
+            /// <summary>Short and inert (a path, a rectangle): sits on the header line, uncoloured.</summary>
+            Plain,
+
+            /// <summary>A console command: stays on the header line, but highlighted.</summary>
+            Command,
+
+            /// <summary>Lua: gets its own lines under the header, since a snippet tacked onto a header is unreadable.</summary>
+            Lua,
+        }
+
+        /// <param name="realm">
+        /// The Lua state the call touches, shown as a colour block in the wiki's own realm colours.
+        /// Null for calls that touch no realm at all (a disk read, a console command), which then get
+        /// no block: reserving it for realms is what makes it mean something.
+        /// </param>
+        internal static void WriteAgentAction(string tool, string? detail, AgentDetail kind = AgentDetail.Plain, string? realm = null)
+        {
+            bool hasRealm = !string.IsNullOrWhiteSpace(realm);
+            string label = hasRealm ? $"█ {realm!.ToUpperInvariant(),-6} " : string.Empty;
+
+            string head = $"[agent] {label}{tool}";
+            string headMarkup = $"[bold magenta1]{Markup.Escape("[agent]")}[/] "
+                + (hasRealm ? $"[{SyntaxHighlighter.RealmColour(realm)}]{Markup.Escape(label)}[/]" : string.Empty)
+                + $"[bold magenta1]{Markup.Escape(tool)}[/]";
+
+            if (string.IsNullOrWhiteSpace(detail) || kind == AgentDetail.Lua)
+            {
+                WriteAgentLine(head, headMarkup);
+
+                if (kind == AgentDetail.Lua && !string.IsNullOrWhiteSpace(detail))
+                {
+                    foreach (string line in detail.Replace("\r", string.Empty).Split('\n'))
+                        WriteAgentLine(line, SyntaxHighlighter.Lua(line));
+                }
+
+                return;
+            }
+
+            string tail = kind == AgentDetail.Command ? SyntaxHighlighter.ConsoleCommand(detail) : Markup.Escape(detail);
+            WriteAgentLine($"{head}  {detail}", $"{headMarkup}  {tail}");
+        }
+
+        /// <summary>One console line of GTerm's own, carrying its own colours rather than the flat tint game output gets.</summary>
+        private static void WriteAgentLine(string plain, string markup)
+            => OnLog(null!, new LogEventArgs(0, 0, "gterm", AgentActionColor, $"{plain}\n") { MarkupOverride = $"{markup}\n" });
+
+        private static readonly System.Drawing.Color AgentActionColor = System.Drawing.Color.FromArgb(255, 0, 255);
+
         private static void OnError(object sender, ErrorEventArgs e)
         {
             string stackTrace = SanitizeLogMessage(e.GetException().ToString());
             AnsiConsole.Markup($"[italic red]{stackTrace}[/]");
+        }
+
+        /// <summary>
+        /// How many terminal rows a line will occupy once the window wraps it. Measured on the plain
+        /// text, never the markup, since colour tags take no visible width.
+        /// </summary>
+        private static int WrappedRowCount(string line)
+        {
+            int width;
+            try { width = Console.WindowWidth; }
+            catch { return 1; }   // no real console attached (redirected output)
+
+            if (width <= 0) return 1;
+
+            int visible = line.TrimEnd('\r', '\n').Length;
+            return Math.Max(1, (visible + width - 1) / width);
         }
 
         private static bool IsBlack(System.Drawing.Color col)
@@ -293,7 +370,7 @@ namespace GTerm
                     string nextChunk = msg.Length > newLineIndex + 1 ? msg[chunk.Length..] : string.Empty;
 
                     LogBuffer.Append(chunk);
-                    MarkupBuffer.Append($"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(chunk)}[/]");
+                    MarkupBuffer.Append(args.MarkupOverride ?? $"[rgb({col.R},{col.G},{col.B})]{SanitizeLogMessage(chunk)}[/]");
                     API?.AppendData(col, chunk);
 
                     string mk = MarkupBuffer.ToString();
@@ -313,24 +390,38 @@ namespace GTerm
                         int currentTopCursor = Console.CursorTop;
                         int currentLeftCursor = Console.CursorLeft;
 
+                        // A line wider than the window wraps onto several rows. Everything below has to
+                        // account for that, or the next line gets written back over the middle of this
+                        // one and the wrapped remainder is left orphaned on screen.
+                        int rows = WrappedRowCount(log);
+
                         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-                            Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, Math.Min(Console.BufferHeight - 1, currentTopCursor + 1));
+                            Console.MoveBufferArea(0, currentTopCursor, Console.WindowWidth, 1, 0, Math.Min(Console.BufferHeight - 1, currentTopCursor + rows));
 
                         }
 
                         Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor);
                         Console.CursorLeft = 0;
 
-                        AnsiConsole.Markup(mk);
+                        // Markup can only be malformed on GTerm's own highlighted lines (game output is
+                        // escaped), but a throw here happens inside the console lock and would take the
+                        // whole log path down. Losing the colour is an acceptable trade for never that.
+                        try { AnsiConsole.Markup(mk); }
+                        catch { Console.Write(log); }
+
                         Console.Out.Flush();
 
+                        // Where the write actually finished, which already accounts for wrapping and for
+                        // the buffer scrolling. Trust it over arithmetic.
+                        int afterTopCursor = Console.CursorTop;
+
                         // this makes typing when the console is filled more stable
-                        if (currentTopCursor + 1 >= Console.BufferHeight)
+                        if (currentTopCursor + rows >= Console.BufferHeight)
                         {
                             Console.Write(InputBuffer.ToString());
                         }
 
-                        Console.CursorTop = Math.Min(Console.BufferHeight - 1, currentTopCursor + 1);
+                        Console.CursorTop = Math.Min(Console.BufferHeight - 1, afterTopCursor);
                         Console.CursorLeft = currentLeftCursor;
 
                         if (Config.ArchiveLogs)
