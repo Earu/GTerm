@@ -89,8 +89,6 @@ Every tool result is prefixed with a `[GTerm]` status line so the agent always k
 
 **Seeing what an agent is doing.** MCP clients show the tool name but usually not the arguments, so GTerm surfaces them itself: every tool call prints a magenta `[agent]` line in GTerm's console *before* it runs. Lua is shown in full on its own lines with Monokai syntax highlighting, and console commands are highlighted inline.
 
-Both screenshot tools capture through Lua's `render.Capture`, so they need `sv_allowcslua 1` and a reachable client realm. That is deliberate: the engine's `jpeg` command works without Lua, but makes Steam save a full-resolution copy plus a thumbnail into your screenshot library on *every* call, and can only ever grab the whole screen.
-
 **Configuration Options:**
 ```json
 {
