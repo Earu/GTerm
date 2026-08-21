@@ -84,10 +84,56 @@ GTerm includes an MCP (Model Context Protocol) server for AI agents such as Curs
 - `take_screenshot_region` - Capture one rectangle of the screen and return it enlarged, so a HUD element, viewmodel or panel is actually legible. Preferred over the full-screen shot for anything specific
 - `take_screenshot` - Capture the whole screen. Last resort: prove things with Lua state and arithmetic first
 - `read_gmod_wiki` - Fetch a page from the Garry's Mod wiki (wiki.facepunch.com/gmod) to check a function's real signature before using it
+- `list_tool_packages` - Lists all the third party tools provided by addons in `lua/gterm_packages/*.lua` (see below)
+- `request_tool_packages` - Ask the user, in GTerm's own console, which packages to enable. The agent cannot choose by itself
+- `call_package_tool` - Run one tool from an enabled package with a JSON args object
 
 Every tool result is prefixed with a `[GTerm]` status line so the agent always knows the connection and realm state. When a precondition is not met (disconnected, wrong realm, no session), the tool returns an error explaining what to do rather than failing silently; pass `force: true` to attempt the call anyway.
 
 **Seeing what an agent is doing.** MCP clients show the tool name but usually not the arguments, so GTerm surfaces them itself: every tool call prints a magenta `[agent]` line in GTerm's console *before* it runs. Lua is shown in full on its own lines with Monokai syntax highlighting, and console commands are highlighted inline.
+
+### MCP Tool packages (opt-in)
+
+Addons and servers can provide their own tools to the agent as Lua files at `lua/gterm_packages/<package>.lua`. GTerm discovers and loads packages with client-realm Lua (`sv_allowcslua` must be 1).
+
+Enabling is done manually in GTerm's console using `packages` in GTerm, or when the agent calls `request_tool_packages`. Consent is stored in `Config.json` under `ToolPackageConsent` per scope (server IPv4, or `local` for listen servers and singleplayer).
+
+The file returns a table: optional `description`, optional `server` (IPv4; only usable on that server), and `tools`. Each tool has `name` (`[a-z][a-z0-9_]*`), `description`, `inputSchema` (JSON schema, `type = "object"`), optional `realm` (`"client"`, the default, or `"server"`), and `run(args)`. Its return value (string or table) comes back as the result, capped at 4096 characters by `print`. Limits: 32 tools, 512-character descriptions, 8 KB input schema, 256 KB definition. Package names: `[a-z0-9][a-z0-9_-]{0,63}`.
+
+Example `lua/gterm_packages/my_addon.lua`:
+```lua
+return {
+    description = "Helpers for my addon.",
+    tools = {
+        {
+            name = "find_entities",
+            description = "Lists entities of a class near the local player.",
+            inputSchema = {
+                type = "object",
+                properties = {
+                    class = { type = "string", description = "Entity class, e.g. prop_physics" },
+                    radius = { type = "number", description = "Search radius in units (default 512)" },
+                },
+                required = { "class" },
+            },
+            run = function(args)
+                local out = {}
+                for _, e in ipairs(ents.FindInSphere(LocalPlayer():GetPos(), args.radius or 512)) do
+                    if e:GetClass() == args.class then out[#out + 1] = { id = e:EntIndex(), pos = tostring(e:GetPos()) } end
+                end
+                return out
+            end,
+        },
+        {
+            name = "count_props",
+            description = "Counts props on the server (listen server or singleplayer only).",
+            inputSchema = { type = "object" },
+            realm = "server",
+            run = function() return #ents.FindByClass("prop_physics") end,
+        },
+    },
+}
+```
 
 **Configuration Options:**
 ```json
@@ -111,4 +157,3 @@ Every tool result is prefixed with a `[GTerm]` status line so the agent always k
 ```
 <img width="874" height="1305" alt="image" src="https://github.com/user-attachments/assets/962e21db-b6bf-4ef3-b919-d09b32117386" />
 <img width="1123" height="1207" alt="image" src="https://github.com/user-attachments/assets/42e953e6-1f37-478d-b024-e1e77e4d48eb" />
-

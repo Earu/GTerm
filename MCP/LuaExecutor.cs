@@ -36,6 +36,31 @@ namespace GTerm.MCP
         internal static GameFileResult Fail(string error) => new() { Outcome = GameFileOutcome.Failed, Error = error };
     }
 
+    internal enum RelayOutcome
+    {
+        /// <summary>The command did not round-trip (disconnected, error, etc.).</summary>
+        Failed,
+
+        /// <summary>No sentinel came back: the script never ran in that realm.</summary>
+        NotExecuted,
+
+        /// <summary>The script ran and reported a problem of its own (see Error).</summary>
+        Refused,
+
+        /// <summary>Content retrieved.</summary>
+        Ok,
+    }
+
+    internal sealed class RelayResult
+    {
+        public RelayOutcome Outcome { get; init; }
+        public string? Content { get; init; }
+        public bool Truncated { get; init; }
+        public string? Error { get; init; }
+
+        internal static RelayResult Fail(string error) => new() { Outcome = RelayOutcome.Failed, Error = error };
+    }
+
     internal enum ScreenCaptureOutcome
     {
         /// <summary>The command did not round-trip (disconnected, error, etc.).</summary>
@@ -186,6 +211,66 @@ namespace GTerm.MCP
             catch (Exception ex)
             {
                 return GameFileResult.Fail($"Exception: {ex.Message}");
+            }
+            finally
+            {
+                TryDelete(relayDisk);
+            }
+        }
+
+        /// <summary>
+        /// Runs caller-built Lua that hands a payload back through a data/ relay file. The Lua gets
+        /// the relay path (relative to data/) and must end by emitting a RELAY sentinel whose JSON
+        /// is {ok=bool, err=string?}; on ok=true it must have file.Write'n the payload there.
+        /// Same trick as ReadGameFileAsync, for payloads print() cannot carry.
+        /// </summary>
+        public async Task<RelayResult> RunWithRelayAsync(Func<string, string> buildLua, LuaRealm realm, int maxBytes, int? collectionWindowMs = null, CancellationToken cancellationToken = default)
+        {
+            if (!GmodInterop.TryGetGmodPath(out string gmodPath, false))
+                return RelayResult.Fail("Could not find Garry's Mod installation path");
+
+            string nonce = Guid.NewGuid().ToString("N");
+            string relayRel = $"gterm/relay_{nonce}.txt";
+            string relayDir = Path.Combine(gmodPath, "garrysmod", "data", "gterm");
+            string relayDisk = Path.Combine(relayDir, $"relay_{nonce}.txt");
+
+            SweepOrphans(relayDir, "relay_*.txt");
+
+            try
+            {
+                LuaScriptResult run = await RunScriptAsync(buildLua(relayRel), realm, [GTermSentinels.Relay], collectionWindowMs, cancellationToken);
+
+                if (!run.Success)
+                    return RelayResult.Fail(run.Error ?? "Relay command failed");
+
+                if (!run.TryGetSentinel(GTermSentinels.Relay, out Sentinel sentinel))
+                    return new RelayResult { Outcome = RelayOutcome.NotExecuted };
+
+                JObject info = JObject.Parse(sentinel.Payload);
+                if (!(info["ok"]?.Value<bool>() ?? false))
+                    return new RelayResult { Outcome = RelayOutcome.Refused, Error = info["err"]?.ToString() ?? "the script reported a failure" };
+
+                if (!File.Exists(relayDisk))
+                    return RelayResult.Fail("The game ran the script but the relay file never appeared on disk (file.Write failed or the path did not resolve).");
+
+                await using FileStream fs = new(relayDisk, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                int cap = maxBytes + 1;
+                byte[] buffer = new byte[cap];
+                int got = await fs.ReadAsync(buffer.AsMemory(0, cap), cancellationToken);
+
+                bool truncated = got > maxBytes;
+                int keep = truncated ? maxBytes : got;
+
+                return new RelayResult
+                {
+                    Outcome = RelayOutcome.Ok,
+                    Content = System.Text.Encoding.UTF8.GetString(buffer, 0, keep),
+                    Truncated = truncated,
+                };
+            }
+            catch (Exception ex)
+            {
+                return RelayResult.Fail($"Exception: {ex.Message}");
             }
             finally
             {

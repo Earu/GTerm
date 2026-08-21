@@ -17,6 +17,8 @@ namespace GTerm.MCP
         internal const string File = "FILE";
         internal const string GameFile = "GFILE";
         internal const string Shot = "SHOT";
+        internal const string ToolResult = "TOOLRES";
+        internal const string Relay = "RELAY";
 
         private const string Prefix = "<<GTERM:";
         private const string HeaderEnd = ">>";

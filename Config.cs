@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -19,6 +20,18 @@ namespace GTerm
         public int? MCPCollectionWindowMs { get; set; }
         public int? MCPPort { get; set; }
         public string? MCPSecret { get; set; }
+
+        /// <summary>Tool packages the user accepted, written by GTerm itself (see MCP/ToolPackages.cs).</summary>
+        public ToolPackageConsentEntry[]? ToolPackageConsent { get; set; }
+    }
+
+    internal class ToolPackageConsentEntry
+    {
+        /// <summary>Server IPv4, or "local".</summary>
+        public string? Scope { get; set; }
+        public string? Package { get; set; }
+        public string? Hash { get; set; }
+        public DateTime? AcceptedAt { get; set; }
     }
 
     internal class Config
@@ -35,24 +48,22 @@ namespace GTerm
         internal int MCPPort { get; set; } = 27513;
         internal string? MCPSecret { get; set; }
 
+        private static readonly object FileLock = new();
+
         internal Config() { }
 
         internal Config(string[] args)
         {
             JsonConfig cfg = new();
 
-            string? appPath = Path.GetDirectoryName(Process.GetCurrentProcess().GetExecutablePath());
-            if (appPath != null)
+            string? configPath = JsonPath();
+            if (configPath != null && File.Exists(configPath))
             {
-                string configPath = Path.Combine(appPath, "Config.json");
-                if (File.Exists(configPath))
+                string json = File.ReadAllText(configPath);
+                JsonConfig? extractedCfg = JsonConvert.DeserializeObject<JsonConfig>(json);
+                if (extractedCfg != null)
                 {
-                    string json = File.ReadAllText(configPath);
-                    JsonConfig? extractedCfg = JsonConvert.DeserializeObject<JsonConfig>(json);
-                    if (extractedCfg != null)
-                    {
-                        cfg = extractedCfg;
-                    }
+                    cfg = extractedCfg;
                 }
             }
 
@@ -63,6 +74,61 @@ namespace GTerm
             }
 
             this.ProcessConfig(cfg);
+        }
+
+        /// <summary>Config.json next to the executable, or null when that cannot be resolved.</summary>
+        internal static string? JsonPath()
+        {
+            string? appPath = Path.GetDirectoryName(Process.GetCurrentProcess().GetExecutablePath());
+            return appPath == null ? null : Path.Combine(appPath, "Config.json");
+        }
+
+        /// <summary>The raw Config.json as a JObject. Missing or corrupt files read as empty.</summary>
+        internal static JObject ReadJson()
+        {
+            lock (FileLock) return ReadJsonUnlocked();
+        }
+
+        /// <summary>
+        /// Read-modify-write on Config.json. Only what <paramref name="mutate"/> touches changes;
+        /// every other key, known to GTerm or not, survives.
+        /// </summary>
+        internal static bool UpdateJson(Action<JObject> mutate)
+        {
+            string? path = JsonPath();
+            if (path == null) return false;
+
+            lock (FileLock)
+            {
+                try
+                {
+                    JObject json = ReadJsonUnlocked();
+                    mutate(json);
+                    File.WriteAllText(path, json.ToString(Formatting.Indented));
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    LocalLogger.WriteLine($"Could not update {path}: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        private static JObject ReadJsonUnlocked()
+        {
+            string? path = JsonPath();
+            if (path == null || !File.Exists(path)) return [];
+
+            try
+            {
+                return JObject.Parse(File.ReadAllText(path));
+            }
+            catch (Exception ex)
+            {
+                LocalLogger.WriteLine($"Could not parse {path}: {ex.Message}");
+                return [];
+            }
         }
 
         private void ProcessConfig(JsonConfig cfg)
