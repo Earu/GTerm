@@ -172,6 +172,10 @@ namespace GTerm
                 }
 
                 ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+
+                // An open consent prompt owns the keyboard: nothing reaches the game or the input line.
+                if (ConsentPrompt.HandleKey(keyInfo)) continue;
+
                 switch (keyInfo.Key)
                 {
                     case ConsoleKey.Enter:
@@ -183,6 +187,17 @@ namespace GTerm
 
                             if (input.Trim().Equals("clear", StringComparison.CurrentCultureIgnoreCase))
                                 Console.Clear();
+
+                            // GTerm's own command: review and enable tool packages without an agent.
+                            if (input.Trim().Equals("packages", StringComparison.CurrentCultureIgnoreCase))
+                            {
+                                if (MCP == null) WriteNotice("packages: the MCP server is disabled (Config.json \"MCP\")");
+                                else _ = MCP.RequestPackagesFromConsoleAsync();
+
+                                Console.CursorLeft = 0;
+                                Console.Write(new string(' ', Console.BufferWidth - 1));
+                                break;
+                            }
 
                             _ = Listener.WriteMessage(input);
 
@@ -220,9 +235,11 @@ namespace GTerm
                         break;
                 }
 
-                Console.Write("\r" + InputBuffer.ToString());
+                Console.Write("\r" + InputLine());
             }
         }
+
+        private static string InputLine() => InputBuffer.ToString();
 
         private static void ShowWaitingConnection() => AnsiConsole.Status()
             .AutoRefresh(false)
@@ -265,6 +282,9 @@ namespace GTerm
 
             /// <summary>Lua: gets its own lines under the header, since a snippet tacked onto a header is unreadable.</summary>
             Lua,
+
+            /// <summary>A short Lua expression (a package tool's args table): stays on the header line, highlighted.</summary>
+            LuaInline,
         }
 
         /// <param name="realm">
@@ -295,8 +315,63 @@ namespace GTerm
                 return;
             }
 
-            string tail = kind == AgentDetail.Command ? SyntaxHighlighter.ConsoleCommand(detail) : Markup.Escape(detail);
+            string tail = kind switch
+            {
+                AgentDetail.Command => SyntaxHighlighter.ConsoleCommand(detail),
+                AgentDetail.LuaInline => SyntaxHighlighter.Lua(detail),
+                _ => Markup.Escape(detail),
+            };
             WriteAgentLine($"{head}  {detail}", $"{headMarkup}  {tail}");
+        }
+
+        /// <summary>A plain line from GTerm itself (notices), in GTerm's own colour.</summary>
+        internal static void WriteNotice(string plain, string? markup = null)
+            => WriteAgentLine(plain, markup ?? $"[magenta1]{Markup.Escape(plain)}[/]");
+
+        /// <summary>
+        /// Draws (or redraws in place) a block of GTerm's own lines at the bottom of the console.
+        /// <paramref name="previousRows"/> is what the last draw returned; the cursor is moved back
+        /// up over it so the block replaces itself. Returns the rows this draw occupied. Only used
+        /// while a consent prompt holds all other output, so nothing else moves the cursor.
+        /// </summary>
+        internal static int RenderBlock(IReadOnlyList<(string plain, string markup)> lines, int previousRows)
+        {
+            lock (Locker)
+            {
+                StringBuilder sb = new();
+                if (previousRows > 0) sb.Append("\x1b[").Append(previousRows).Append('A');
+
+                int rows = 0;
+                foreach ((string plain, string markup) in lines)
+                {
+                    sb.Append("\r\x1b[2K");
+                    try { sb.Append(AnsiConsole.Console.Profile.Capabilities.Ansi ? MarkupToAnsi(markup) : plain); }
+                    catch { sb.Append(plain); }
+                    sb.Append('\n');
+                    rows += WrappedRowCount(plain);
+                }
+
+                // Clear the input line the block scrolled past, then leave the cursor on it.
+                sb.Append("\r\x1b[2K");
+                Console.Write(sb.ToString());
+                Console.Out.Flush();
+                return rows;
+            }
+        }
+
+        private static string MarkupToAnsi(string markup)
+        {
+            if (markup.Length == 0) return string.Empty;
+
+            StringWriter writer = new();
+            IAnsiConsole console = AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Ansi = AnsiSupport.Yes,
+                ColorSystem = ColorSystemSupport.Detect,
+                Out = new AnsiConsoleOutput(writer),
+            });
+            console.Markup(markup);
+            return writer.ToString();
         }
 
         /// <summary>One console line of GTerm's own, carrying its own colours rather than the flat tint game output gets.</summary>
@@ -348,10 +423,46 @@ namespace GTerm
             return false;
         }
 
+        /// <summary>Game output parked while a consent prompt is open, so the question stays on screen.</summary>
+        private static readonly Queue<LogEventArgs> HeldLogs = new();
+        private const int MaxHeldLogs = 5000;
+        private static int DroppedHeldLogs;
+
+        /// <summary>Prints whatever was parked during a prompt. Called when the prompt closes.</summary>
+        internal static void ReleaseHeldLogs()
+        {
+            List<LogEventArgs> backlog;
+            int dropped;
+            lock (Locker)
+            {
+                if (HeldLogs.Count == 0 && DroppedHeldLogs == 0) return;
+                backlog = [.. HeldLogs];
+                HeldLogs.Clear();
+                dropped = DroppedHeldLogs;
+                DroppedHeldLogs = 0;
+            }
+
+            WriteNotice($"packages: showing {backlog.Count} line(s) held while the prompt was open{(dropped > 0 ? $" ({dropped} older lines dropped)" : "")}");
+            foreach (LogEventArgs held in backlog) OnLog(null!, held);
+        }
+
         private static void OnLog(object sender, LogEventArgs args)
         {
             lock (Locker)
             {
+                // The prompt owns the screen: everything else waits for the answer.
+                if (ConsentPrompt.IsOpen)
+                {
+                    if (HeldLogs.Count >= MaxHeldLogs)
+                    {
+                        HeldLogs.Dequeue();
+                        DroppedHeldLogs++;
+                    }
+
+                    HeldLogs.Enqueue(args);
+                    return;
+                }
+
                 DateTime now = DateTime.Now;
                 string timeStamp = now.ToString("hh:mm:ss");
                 System.Drawing.Color col = IsBlack(args.Color) ? System.Drawing.Color.White : args.Color;
@@ -381,7 +492,7 @@ namespace GTerm
                     API?.FinishDataAsync();
 
                     string logChunk = log.Contains('|', StringComparison.CurrentCulture) ? string.Join("|", log.Split('|').Skip(1).ToArray()) : log; // there should always be 1
-                    if (!string.IsNullOrWhiteSpace(logChunk))
+                    if (args.MarkupOverride != null || !string.IsNullOrWhiteSpace(logChunk))
                     {
                         // GTerm's own probe/result markers are plumbing, not console output.
                         if (GTermSentinels.IsSentinel(logChunk)) return;
@@ -418,7 +529,7 @@ namespace GTerm
                         // this makes typing when the console is filled more stable
                         if (currentTopCursor + rows >= Console.BufferHeight)
                         {
-                            Console.Write(InputBuffer.ToString());
+                            Console.Write(InputLine());
                         }
 
                         Console.CursorTop = Math.Min(Console.BufferHeight - 1, afterTopCursor);

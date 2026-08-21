@@ -29,9 +29,22 @@ namespace GTerm.MCP
 
         // Everything here is available client-side, so the client probe alone fully describes the
         // session even when we are a client on a remote server and the server realm is unreachable.
+        // It also carries the server address and the tool packages under lua/gterm_packages, so offers
+        // are detected in the same round trip (see ToolPackages). The client's "LUA" listing is a
+        // startup-time view (networked files, addons mounted at launch) and "GAME" is the live disk,
+        // so both are sent and unioned in C#. Console commands are clamped at 512 chars, so this
+        // stays terse on purpose; dedupe and caps happen on the C# side.
         private static readonly string ClientProbeCommand =
-            "lua_run_cl " + GTermSentinels.LuaEmit(GTermSentinels.Client,
-                "util.TableToJSON({m=game.GetMap(),g=engine.ActiveGamemode(),mp=game.MaxPlayers(),pc=player.GetCount(),lp=IsValid(LocalPlayer())})");
+            "lua_run_cl local a,b=file.Find(\"gterm_packages/*.lua\",\"LUA\"),file.Find(\"lua/gterm_packages/*.lua\",\"GAME\") "
+            + GTermSentinels.LuaEmit(GTermSentinels.Client,
+                "util.TableToJSON({m=game.GetMap(),g=engine.ActiveGamemode(),mp=game.MaxPlayers(),pc=player.GetCount(),lp=IsValid(LocalPlayer()),"
+                + "ip=game.GetIPAddress(),d=game.IsDedicated(),pk=a,pg=b})");
+
+        /// <summary>
+        /// The session the snapshot described is gone: disconnect, map change, or a different server.
+        /// Carries a human-readable reason.
+        /// </summary>
+        internal event Action<string>? SessionInvalidated;
 
         private readonly ILogListener Listener;
         private readonly CommandCollector Collector;
@@ -138,7 +151,18 @@ namespace GTerm.MCP
                 }
 
                 GameStatus status = Interpret(server, client, statusResult);
-                lock (this.Locker) this.Cached = status;
+
+                GameStatus previous;
+                lock (this.Locker)
+                {
+                    previous = this.Cached;
+                    this.Cached = status;
+                }
+
+                // Scope change: a different server, or server <-> local. Only meaningful when the
+                // previous snapshot actually described a session.
+                if (previous.State == GameConnState.Live && status.State == GameConnState.Live && previous.ServerAddress != status.ServerAddress)
+                    this.SessionInvalidated?.Invoke($"scope changed from {previous.ServerAddress ?? "local"} to {status.ServerAddress ?? "local"}");
 
                 return status;
             }
@@ -198,7 +222,11 @@ namespace GTerm.MCP
                 };
             }
 
-            bool? isDedicated = sv?["d"]?.Value<bool>();
+            // The server probe is authoritative, but when joined to a remote dedicated server only the
+            // client one answers, and it carries the same flag.
+            bool? isDedicated = sv?["d"]?.Value<bool>() ?? cl?["d"]?.Value<bool>();
+            string? serverAddress = ToolPackages.SanitizeAddress(cl?["ip"]?.ToString());
+            string[] packages = ToolPackages.SanitizePackageNames(cl?["pk"] as JArray, cl?["pg"] as JArray);
 
             RealmState serverRealm = serverOk
                 ? new RealmState { Reach = RealmReach.Ok }
@@ -233,6 +261,8 @@ namespace GTerm.MCP
                 MaxPlayers = sv?["mp"]?.Value<int>() ?? cl?["mp"]?.Value<int>(),
                 IsDedicated = isDedicated,
                 SinglePlayer = sv?["sp"]?.Value<bool>(),
+                ServerAddress = serverAddress,
+                OfferedPackages = clientOk ? packages : [],
                 ClientRealm = clientRealm,
                 ServerRealm = serverRealm,
             };
@@ -290,6 +320,8 @@ namespace GTerm.MCP
             MaxPlayers = source.MaxPlayers,
             IsDedicated = source.IsDedicated,
             SinglePlayer = source.SinglePlayer,
+            ServerAddress = source.ServerAddress,
+            OfferedPackages = source.OfferedPackages,
             ClientRealm = source.ClientRealm,
             ServerRealm = source.ServerRealm,
             CapturedAt = capturedAt ?? source.CapturedAt,
@@ -313,6 +345,8 @@ namespace GTerm.MCP
             {
                 this.Cached = new GameStatus { State = GameConnState.Disconnected, GmodProcessRunning = GmodInterop.IsGmodRunning() };
             }
+
+            this.SessionInvalidated?.Invoke("GTerm lost the connection to GMod");
         }
 
         private void OnLog(object sender, LogEventArgs args)
@@ -324,6 +358,8 @@ namespace GTerm.MCP
                 if (this.Cached.State != GameConnState.Live || this.Cached.Stale) return;
                 this.Cached = Clone(this.Cached, stale: true);
             }
+
+            this.SessionInvalidated?.Invoke("the console reported a map change or disconnect");
         }
     }
 }
