@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace GTerm.MCP
 {
-    internal sealed record PackageToolDef(string Name, string Description, JObject InputSchema, LuaRealm Realm, bool DescriptionTruncated);
+    internal sealed record PackageToolDef(string Name, string Description, JObject InputSchema, LuaRealm Realm, string Target, bool DescriptionTruncated);
 
     /// <summary>One loaded lua/gterm_packages/{Name}.lua. Hash is sha256 of the file's compiled bytecode.</summary>
     internal sealed record PackageManifest(string Name, string? Description, string? Server, IReadOnlyList<PackageToolDef> Tools, string Hash);
@@ -315,7 +315,7 @@ namespace GTerm.MCP
             sb.AppendLine($"if not istable(__def) then {GTermSentinels.LuaEmit(GTermSentinels.Relay, "util.TableToJSON({ok=false, err=\"the file did not return a table\"})")} return end");
             sb.AppendLine("local __out = {hash=__hash, description=__def.description, server=__def.server, tools={}}");
             sb.AppendLine("if istable(__def.tools) then for _, __t in ipairs(__def.tools) do if istable(__t) then");
-            sb.AppendLine("  __out.tools[#__out.tools + 1] = {name=__t.name, description=__t.description, realm=__t.realm, inputSchema=__t.inputSchema, has_run=isfunction(__t.run)}");
+            sb.AppendLine("  __out.tools[#__out.tools + 1] = {name=__t.name, description=__t.description, realm=__t.realm, target=__t.target, inputSchema=__t.inputSchema, has_run=isfunction(__t.run)}");
             sb.AppendLine("end end end");
             sb.AppendLine("file.CreateDir(\"gterm\")");
             sb.Append("local __w = file.Write(").Append(GTermSentinels.LuaLiteral(relayRel)).AppendLine(", util.TableToJSON(__out))");
@@ -397,7 +397,16 @@ namespace GTerm.MCP
                     }
                 }
 
-                tools.Add(new PackageToolDef(toolName, toolDescription.Trim(), schema, realm, truncated));
+                string target = realm.ToString().ToLowerInvariant();
+                if (entry["target"] is { Type: not JTokenType.Null } targetToken)
+                {
+                    string t = targetToken.ToString().Trim();
+                    if (t.Length == 0 || t.Length > 24 || !t.All(ch => char.IsAsciiLetterLower(ch) || char.IsAsciiDigit(ch) || ch is ' ' or '+' or '/' or '-'))
+                        return $"tool \"{toolName}\" target must be 1-24 chars of a-z, 0-9, space, + / -";
+                    target = t;
+                }
+
+                tools.Add(new PackageToolDef(toolName, toolDescription.Trim(), schema, realm, target, truncated));
             }
 
             manifest = new PackageManifest(name, description, server, tools, hash);
@@ -589,7 +598,7 @@ namespace GTerm.MCP
                 : $"GTERM: THE AGENT ASKS TO ENABLE TOOL PACKAGES FOR {status.Scope}";
             List<ConsentPrompt.Item> items = candidates.Select(m => new ConsentPrompt.Item(
                 m.Name, m.Server, m.Description,
-                m.Tools.Select(t => new ConsentPrompt.Tool(t.Name, t.Realm.ToString().ToLowerInvariant(), t.Description)).ToArray())).ToList();
+                m.Tools.Select(t => new ConsentPrompt.Tool(t.Name, t.Target, t.Description)).ToArray())).ToList();
 
             ConsentPrompt? prompt = ConsentPrompt.Open(title, items);
             if (prompt == null)
@@ -756,7 +765,7 @@ namespace GTerm.MCP
 
             foreach (PackageToolDef tool in manifest.Tools)
             {
-                sb.AppendLine($"- {tool.Name} [{tool.Realm.ToString().ToLowerInvariant()}]");
+                sb.AppendLine($"- {tool.Name} [{tool.Target}]");
                 sb.AppendLine($"  description: {tool.Description}{(tool.DescriptionTruncated ? " [truncated]" : "")}");
                 sb.AppendLine($"  inputSchema: {tool.InputSchema.ToString(Formatting.None)}");
             }

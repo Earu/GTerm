@@ -12,7 +12,7 @@ namespace GTerm.MCP
     /// </summary>
     internal sealed class ConsentPrompt
     {
-        internal sealed record Tool(string Name, string Realm, string Description);
+        internal sealed record Tool(string Name, string Target, string Description);
         internal sealed record Item(string Name, string? Bound, string? Description, IReadOnlyList<Tool> Tools);
 
         private static readonly object Locker = new();
@@ -132,9 +132,6 @@ namespace GTerm.MCP
         private void Render(bool final = false, bool cancelled = false)
         {
             const string rule = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
-            string client = SyntaxHighlighter.RealmColour("client");
-            string server = SyntaxHighlighter.RealmColour("server");
-
             List<(string plain, string markup)> lines = [];
             void Line(string plain, string markup) => lines.Add((plain, markup));
 
@@ -163,11 +160,8 @@ namespace GTerm.MCP
                     Line($"         {Short(item.Description, 80)}", $"         [white]{Markup.Escape(Short(item.Description, 80))}[/]");
 
                 foreach (Tool tool in item.Tools)
-                {
-                    string colour = tool.Realm == "server" ? server : client;
-                    Line($"         - {tool.Name} [{tool.Realm}]  {Short(tool.Description, 60)}",
-                        $"         [grey]-[/] [bold cyan1]{Markup.Escape(tool.Name)}[/] [{colour}]█ {tool.Realm,-6}[/] [white]{Markup.Escape(Short(tool.Description, 60))}[/]");
-                }
+                    Line($"         - {tool.Name}  {Short(tool.Description, 66)}",
+                        $"         [grey]-[/] [bold cyan1]{Markup.Escape(tool.Name)}[/]  [white]{Markup.Escape(Short(tool.Description, 66))}[/]");
 
                 Line("", "");
             }
