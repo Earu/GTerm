@@ -14,10 +14,10 @@ namespace GTerm.MCP
         /// <summary>The command did not round-trip (disconnected, error, etc.).</summary>
         Failed,
 
-        /// <summary>No result came back — the reader script never ran (e.g. sv_allowcslua on client).</summary>
+        /// <summary>No result came back, the reader script never ran (e.g. sv_allowcslua on client).</summary>
         NotExecuted,
 
-        /// <summary>The game ran the reader but file.Read returned nil — not readable in this realm.</summary>
+        /// <summary>The game ran the reader but file.Read returned nil, not readable in this realm.</summary>
         NotReadable,
 
         /// <summary>Contents retrieved.</summary>
@@ -120,7 +120,7 @@ namespace GTerm.MCP
                 return Task.FromResult(Failed("Lua code cannot be empty"));
 
             // Stop early on an error, but on success keep collecting for the whole window so late
-            // asynchronous prints (timers, hooks, callbacks) are captured — that is what `timeout` is for.
+            // asynchronous prints (timers, hooks, callbacks) are captured, that is what `timeout` is for.
             return RunScriptAsync(BuildRunner(luaCode), realm, [GTermSentinels.LuaOk, GTermSentinels.LuaErr], collectionWindowMs, cancellationToken,
                 earlyExitMarkers: [GTermSentinels.LuaErr]);
         }
@@ -146,7 +146,7 @@ namespace GTerm.MCP
         /// <summary>
         /// Reads a file's contents from the running game's virtual filesystem. The game reads the file
         /// and writes it to data/ (a "relay"); GTerm then reads that from disk. This sidesteps the
-        /// 4096-char cap on print() — the console only carries a tiny status sentinel, never the content.
+        /// 4096-char cap on print(), the console only carries a tiny status sentinel, never the content.
         /// </summary>
         public async Task<GameFileResult> ReadGameFileAsync(string path, string searchPath, LuaRealm realm, int maxBytes, int? collectionWindowMs = null, CancellationToken cancellationToken = default)
         {

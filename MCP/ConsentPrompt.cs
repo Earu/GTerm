@@ -25,11 +25,13 @@ namespace GTerm.MCP
         private int Cursor;
         private int RenderedRows;
 
-        private ConsentPrompt(string title, IReadOnlyList<Item> items)
+        private ConsentPrompt(string title, IReadOnlyList<Item> items, bool[]? initialChecked)
         {
             this.Title = title;
             this.Items = items;
             this.Checked = new bool[items.Count];
+            if (initialChecked != null)
+                for (int i = 0; i < items.Count && i < initialChecked.Length; i++) this.Checked[i] = initialChecked[i];
         }
 
         internal static bool IsOpen
@@ -38,13 +40,13 @@ namespace GTerm.MCP
         }
 
         /// <summary>Opens and draws a prompt. Null when one is already open.</summary>
-        internal static ConsentPrompt? Open(string title, IReadOnlyList<Item> items)
+        internal static ConsentPrompt? Open(string title, IReadOnlyList<Item> items, bool[]? initialChecked = null)
         {
             ConsentPrompt prompt;
             lock (Locker)
             {
                 if (Active != null) return null;
-                prompt = new ConsentPrompt(title, items);
+                prompt = new ConsentPrompt(title, items, initialChecked);
                 Active = prompt;
             }
 

@@ -194,7 +194,7 @@ namespace GTerm.MCP
             {
                 ServerStatus? parsed = statusFallback != null ? ParseStatus(statusFallback) : null;
 
-                // `status` reported a real session, so we ARE in a game — Lua is just refused in both
+                // `status` reported a real session, so we ARE in a game, Lua is just refused in both
                 // realms (server remote + client blocked by sv_allowcslua). Not a main-menu NoSession.
                 if (parsed != null)
                 {
@@ -207,7 +207,7 @@ namespace GTerm.MCP
                         PlayerCount = parsed.Players,
                         MaxPlayers = parsed.MaxPlayers,
                         ClientRealm = new RealmState { Reach = RealmReach.Blocked, Reason = "sv_allowcslua=0 or script enforcer" },
-                        ServerRealm = new RealmState { Reach = RealmReach.Unreachable, Reason = "no local server state — joined to a remote server" },
+                        ServerRealm = new RealmState { Reach = RealmReach.Unreachable, Reason = "no local server state, joined to a remote server" },
                         Note = "connected to a server but no Lua realm will run code (sv_allowcslua=0 and server realm is remote)",
                     };
                 }
@@ -230,7 +230,7 @@ namespace GTerm.MCP
 
             RealmState serverRealm = serverOk
                 ? new RealmState { Reach = RealmReach.Ok }
-                : new RealmState { Reach = RealmReach.Unreachable, Reason = "no local server state — main menu, or joined to a remote server" };
+                : new RealmState { Reach = RealmReach.Unreachable, Reason = "no local server state, main menu, or joined to a remote server" };
 
             RealmState clientRealm;
             if (clientOk)

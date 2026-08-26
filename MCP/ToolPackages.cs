@@ -11,8 +11,11 @@ namespace GTerm.MCP
     /// <summary>One loaded lua/gterm_packages/{Name}.lua. Hash is sha256 of the file's compiled bytecode.</summary>
     internal sealed record PackageManifest(string Name, string? Description, string? Server, IReadOnlyList<PackageToolDef> Tools, string Hash);
 
+    internal sealed record ToolCapability(string Name, string Target, string Description);
+    internal sealed record PackageCapability(string Name, string? Description, IReadOnlyList<ToolCapability> Tools);
+
     /// <summary>What the status header/detail needs to know, without owning state.</summary>
-    internal sealed record ToolPackagesView(IReadOnlyList<string> Enabled)
+    internal sealed record ToolPackagesView(IReadOnlyList<string> Enabled, IReadOnlyList<PackageCapability> Capabilities)
     {
         internal int EnabledCount => this.Enabled.Count;
     }
@@ -103,8 +106,6 @@ namespace GTerm.MCP
         /// <summary>(scope, package, hash) the user declined this session: the agent cannot re-prompt for these.</summary>
         private readonly HashSet<string> Declined = new(StringComparer.Ordinal);
 
-        /// <summary>(scope, package) already announced as available this session.</summary>
-        private readonly HashSet<string> Announced = new(StringComparer.Ordinal);
 
         internal ToolPackages(LuaExecutor executor, GameStatusProbe status)
         {
@@ -176,8 +177,19 @@ namespace GTerm.MCP
 
         internal ToolPackagesView View()
         {
-            lock (this.Locker) return new ToolPackagesView(this.Current.Keys.Order(StringComparer.Ordinal).ToArray());
+            lock (this.Locker)
+            {
+                PackageCapability[] caps = this.Current.Values
+                    .OrderBy(e => e.Manifest.Name, StringComparer.Ordinal)
+                    .Select(e => new PackageCapability(e.Manifest.Name, e.Manifest.Description,
+                        e.Manifest.Tools.Select(t => new ToolCapability(t.Name, t.Target, t.Description)).ToArray()))
+                    .ToArray();
+                return new ToolPackagesView(caps.Select(c => c.Name).ToArray(), caps);
+            }
         }
+
+        /// <summary>Auto-prompt bookkeeping: (scope, package, hash) already put in front of the user once.</summary>
+        private readonly HashSet<string> AutoOffered = new(StringComparer.Ordinal);
 
         private void DisableAll(string reason)
         {
@@ -456,9 +468,101 @@ namespace GTerm.MCP
             });
         }
 
+        private static void ForgetConsent(string scope, string name)
+        {
+            Config.UpdateJson(json =>
+            {
+                if (json[ConsentKey] is not JArray entries) return;
+                for (int i = entries.Count - 1; i >= 0; i--)
+                    if (entries[i]["Scope"]?.ToString() == scope && entries[i]["Package"]?.ToString() == name) entries.RemoveAt(i);
+            });
+        }
+
         #endregion
 
         #region Operations
+
+        internal sealed class ManageResult
+        {
+            internal IReadOnlyList<string> Enabled { get; init; } = [];
+            internal IReadOnlyList<string> Disabled { get; init; } = [];
+            internal IReadOnlyList<(string name, string problem)> Unusable { get; init; } = [];
+            internal bool Cancelled { get; init; }
+        }
+
+        /// <summary>
+        /// The `packages` console command: opens the checkbox UI for every package in scope, enabled
+        /// ones pre-checked. Confirming makes the enabled set exactly the checked set, remembering
+        /// consent for newly-checked packages and forgetting it for unchecked ones. User-only.
+        /// </summary>
+        internal async Task<(ManageResult? result, PackageError? error)> ManageAsync(GameStatus status, CancellationToken cancellationToken = default)
+        {
+            PackageError? failure = Precheck(status);
+            if (failure != null) return (null, failure);
+
+            if (ConsentPrompt.IsOpen) return (null, new PackageError { Message = "a prompt is already open" });
+
+            // Enabled packages first (from their stored manifests), then any offered ones not already
+            // in the list. An enabled package stays listed even if its file is momentarily unreadable.
+            List<(PackageManifest manifest, bool enabled)> rows = [];
+            List<(string, string)> unusable = [];
+
+            lock (this.Locker)
+                foreach (Enabled e in this.Current.Values.OrderBy(e => e.Manifest.Name, StringComparer.Ordinal))
+                    rows.Add((e.Manifest, true));
+
+            foreach (string name in status.OfferedPackages)
+            {
+                if (rows.Any(r => r.manifest.Name == name)) continue;
+                (PackageManifest? manifest, string? problem) = await FetchManifestAsync(name, cancellationToken);
+                problem ??= manifest == null ? null : BindingProblem(manifest, status);
+                if (manifest == null || problem != null) { unusable.Add((name, problem ?? "unreadable")); continue; }
+                rows.Add((manifest, false));
+            }
+
+            rows.Sort((a, b) => string.CompareOrdinal(a.manifest.Name, b.manifest.Name));
+
+            if (rows.Count == 0)
+                return (new ManageResult { Unusable = unusable }, null);
+
+            List<ConsentPrompt.Item> items = rows.Select(r => new ConsentPrompt.Item(
+                r.manifest.Name, r.manifest.Server, r.manifest.Description,
+                r.manifest.Tools.Select(t => new ConsentPrompt.Tool(t.Name, t.Target, t.Description)).ToArray())).ToList();
+            bool[] initial = rows.Select(r => r.enabled).ToArray();
+
+            ConsentPrompt? prompt = ConsentPrompt.Open($"GTERM: MANAGE TOOL PACKAGES FOR {status.Scope}", items, initial);
+            if (prompt == null) return (null, new PackageError { Message = "a prompt is already open" });
+
+            return (await ApplyManageAsync(prompt, status.Scope, rows, unusable), null);
+        }
+
+        private async Task<ManageResult> ApplyManageAsync(ConsentPrompt prompt, string scope, List<(PackageManifest manifest, bool enabled)> rows, List<(string, string)> unusable)
+        {
+            int[]? chosen = await prompt.WaitAsync();
+            if (chosen == null) return new ManageResult { Cancelled = true, Unusable = unusable };
+
+            List<string> enabled = [], disabled = [];
+            for (int i = 0; i < rows.Count; i++)
+            {
+                (PackageManifest manifest, bool wasEnabled) = rows[i];
+                bool want = chosen.Contains(i);
+                if (want && !wasEnabled)
+                {
+                    RememberConsent(scope, manifest.Name, manifest.Hash);
+                    lock (this.Locker) this.Current[manifest.Name] = new Enabled(scope, manifest, DateTime.Now);
+                    enabled.Add(manifest.Name);
+                    LocalLogger.WriteLine($"User enabled tool package '{manifest.Name}' for {scope}");
+                }
+                else if (!want && wasEnabled)
+                {
+                    ForgetConsent(scope, manifest.Name);
+                    Disable(manifest.Name, "disabled by the user via the packages command");
+                    disabled.Add(manifest.Name);
+                }
+            }
+
+            return new ManageResult { Enabled = enabled, Disabled = disabled, Unusable = unusable };
+        }
 
         /// <summary>
         /// Re-enables offered packages the user already accepted for this scope, silently. Runs
@@ -552,7 +656,7 @@ namespace GTerm.MCP
         /// A set the user declined is not proposed again this session unless the user asks
         /// (<paramref name="fromUser"/>).
         /// </summary>
-        internal async Task<(RequestResult? result, PackageError? error)> RequestAsync(GameStatus status, bool fromUser, CancellationToken cancellationToken = default)
+        internal async Task<(RequestResult? result, PackageError? error)> RequestAsync(GameStatus status, bool fromUser, bool auto = false, CancellationToken cancellationToken = default)
         {
             PackageError? failure = Precheck(status);
             if (failure != null) return (null, failure);
@@ -579,13 +683,21 @@ namespace GTerm.MCP
                     continue;
                 }
 
-                bool wasDeclined;
-                lock (this.Locker) wasDeclined = this.Declined.Contains(DeclineKey(status.Scope, name, manifest.Hash));
+                string key = DeclineKey(status.Scope, name, manifest.Hash);
+                bool wasDeclined, wasAutoOffered;
+                lock (this.Locker)
+                {
+                    wasDeclined = this.Declined.Contains(key);
+                    wasAutoOffered = this.AutoOffered.Contains(key);
+                }
                 if (wasDeclined && !fromUser)
                 {
                     blocked.Add(name);
                     continue;
                 }
+                // Auto-prompt (from get_game_status) offers each package once per session; after that
+                // the agent must ask explicitly (request_tool_packages) or the user types `packages`.
+                if (auto && wasAutoOffered) continue;
 
                 candidates.Add(manifest);
             }
@@ -600,24 +712,19 @@ namespace GTerm.MCP
                 m.Name, m.Server, m.Description,
                 m.Tools.Select(t => new ConsentPrompt.Tool(t.Name, t.Target, t.Description)).ToArray())).ToList();
 
+            if (auto)
+                lock (this.Locker) foreach (PackageManifest m in candidates) this.AutoOffered.Add(DeclineKey(status.Scope, m.Name, m.Hash));
+
             ConsentPrompt? prompt = ConsentPrompt.Open(title, items);
             if (prompt == null)
                 return (new RequestResult { Outcome = RequestOutcome.PromptBusy, Unusable = unusable, Blocked = blocked }, null);
 
-            // The decision is applied by this task whenever the user answers, whether or not the
-            // caller is still waiting: MCP clients give up on a tool call long before the prompt's
-            // own timeout, and a late answer must still count.
-            Task<RequestResult> decision = ApplyDecisionAsync(prompt, status.Scope, candidates, unusable, blocked);
-
-            Task finished = await Task.WhenAny(decision, Task.Delay(MaxBlock, cancellationToken));
-            if (finished != decision)
-                return (new RequestResult { Outcome = RequestOutcome.Pending, Unusable = unusable, Blocked = blocked }, null);
-
-            return (await decision, null);
+            // The prompt never times out, and the decision is applied by this task the moment the
+            // user answers, whether or not the caller is still waiting. We wait here for as long as
+            // the answer takes; if the MCP client gives up on the request first, the task keeps
+            // running and still enables what the user picked, so the next get_game_status sees it.
+            return (await ApplyDecisionAsync(prompt, status.Scope, candidates, unusable, blocked), null);
         }
-
-        /// <summary>How long a request_tool_packages call blocks before handing back "pending".</summary>
-        internal static readonly TimeSpan MaxBlock = TimeSpan.FromSeconds(40);
 
         private async Task<RequestResult> ApplyDecisionAsync(ConsentPrompt prompt, string scope, List<PackageManifest> candidates, List<(string, string)> unusable, List<string> blocked)
         {
@@ -662,26 +769,6 @@ namespace GTerm.MCP
                 Blocked = blocked,
                 ConsentSaveFailed = saveFailed,
             };
-        }
-
-        /// <summary>
-        /// One-time console notice per (scope, package) that something new is available, so the
-        /// user hears about offers without any agent involved.
-        /// </summary>
-        internal void AnnounceNew(GameStatus status)
-        {
-            List<string> fresh = [];
-            lock (this.Locker)
-            {
-                foreach (string name in status.OfferedPackages)
-                {
-                    if (this.Current.ContainsKey(name)) continue;
-                    if (this.Announced.Add($"{status.Scope}\n{name}")) fresh.Add(name);
-                }
-            }
-
-            if (fresh.Count > 0)
-                Program.WriteNotice($"packages: {string.Join(", ", fresh)} available for {status.Scope}. Type \"packages\" to review.");
         }
 
         /// <summary>

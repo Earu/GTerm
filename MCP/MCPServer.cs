@@ -394,7 +394,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
 
             if (status.State == GameConnState.NoSession)
             {
-                return Err("GMod is connected but no Lua realm is responding — it is at the main menu or loading. "
+                return Err("GMod is connected but no Lua realm is responding, it is at the main menu or loading. "
                     + "Load or join a game, then retry. Pass force=true to attempt the call anyway.");
             }
 
@@ -538,7 +538,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                     new
                     {
                         name = "execute_lua_code",
-                        description = "Executes Lua inside the running game and reports syntax errors, runtime errors, and console output separately. The realm argument is REQUIRED and has no default: use \"server\" for entities, gamemode logic and anything authoritative; use \"client\" for HUD, rendering and input. \"menu\" is NOT reachable through GTerm and returns an error. Client-realm execution is blocked whenever sv_allowcslua is 0, which is the default on most servers — call get_game_status to see which realms are reachable before choosing. WARNING: this runs arbitrary code in the live game. PRECONDITION: GMod connected and the chosen realm reachable, else returns isError.",
+                        description = "Executes Lua inside the running game and reports syntax errors, runtime errors, and console output separately. The realm argument is REQUIRED and has no default: use \"server\" for entities, gamemode logic and anything authoritative; use \"client\" for HUD, rendering and input. \"menu\" is NOT reachable through GTerm and returns an error. Client-realm execution is blocked whenever sv_allowcslua is 0, which is the default on most servers, call get_game_status to see which realms are reachable before choosing. WARNING: this runs arbitrary code in the live game. PRECONDITION: GMod connected and the chosen realm reachable, else returns isError.",
                         inputSchema = new
                         {
                             type = "object",
@@ -558,7 +558,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                                 timeout = new
                                 {
                                     type = "number",
-                                    description = "Seconds to KEEP LISTENING for console output after your code runs (default: 1, min: 0.5, max: 30). Errors return immediately, but on success the tool keeps collecting for this long — RAISE IT to capture prints that appear later, e.g. from timer.Simple, hooks, coroutines, net or HTTP callbacks. For output even later than this, call capture_console_output afterward."
+                                    description = "Seconds to KEEP LISTENING for console output after your code runs (default: 1, min: 0.5, max: 30). Errors return immediately, but on success the tool keeps collecting for this long, RAISE IT to capture prints that appear later, e.g. from timer.Simple, hooks, coroutines, net or HTTP callbacks. For output even later than this, call capture_console_output afterward."
                                 },
                                 force = new
                                 {
@@ -603,7 +603,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                     new
                     {
                         name = "check_game_file",
-                        description = "Asks the RUNNING game whether a path exists in its virtual filesystem — which includes mounted addons, Workshop GMAs and mounted games, none of which appear on disk under garrysmod/. Use this before assuming a file you edited or read is actually visible to the game. Reports the 'GAME' search path (all mounted content) and the 'LUA' search path (the current realm's Lua path) separately, because they can disagree. PRECONDITION: GMod connected and a realm reachable, else returns isError.",
+                        description = "Asks the RUNNING game whether a path exists in its virtual filesystem, which includes mounted addons, Workshop GMAs and mounted games, none of which appear on disk under garrysmod/. Use this before assuming a file you edited or read is actually visible to the game. Reports the 'GAME' search path (all mounted content) and the 'LUA' search path (the current realm's Lua path) separately, because they can disagree. PRECONDITION: GMod connected and a realm reachable, else returns isError.",
                         inputSchema = new
                         {
                             type = "object",
@@ -633,7 +633,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                     new
                     {
                         name = "capture_console_output",
-                        description = "Returns the most recent Garry's Mod console output from GTerm's live scrollback buffer, NEWEST LINE FIRST, immediately. This looks BACKWARDS at what already printed — call it right after running a command or Lua to see the output (including asynchronous prints from timers, hooks and callbacks) without racing a capture window. It does not wait or block. GTerm's own internal probe lines are filtered out.",
+                        description = "Returns the most recent Garry's Mod console output from GTerm's live scrollback buffer, NEWEST LINE FIRST, immediately. This looks BACKWARDS at what already printed, call it right after running a command or Lua to see the output (including asynchronous prints from timers, hooks and callbacks) without racing a capture window. It does not wait or block. GTerm's own internal probe lines are filtered out.",
                         inputSchema = new
                         {
                             type = "object",
@@ -700,7 +700,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                     new
                     {
                         name = "read_game_file",
-                        description = "Reads a file's CONTENTS from the RUNNING game's virtual filesystem — including mounted addons, Workshop GMAs and mounted games, which read_gmod_file (disk-only) cannot see. IMPORTANT: on the CLIENT realm only files the client has LOCALLY are readable (its own addons/ or a mounted Workshop addon). A file that exists only on a server you joined is NOT sent to clients as a readable file, so it returns not-readable — read it from the SERVER realm if you are hosting. On the server realm, all server-side content is readable. PRECONDITION: GMod connected and the chosen realm reachable, else returns isError.",
+                        description = "Reads a file's CONTENTS from the RUNNING game's virtual filesystem, including mounted addons, Workshop GMAs and mounted games, which read_gmod_file (disk-only) cannot see. IMPORTANT: on the CLIENT realm only files the client has LOCALLY are readable (its own addons/ or a mounted Workshop addon). A file that exists only on a server you joined is NOT sent to clients as a readable file, so it returns not-readable, read it from the SERVER realm if you are hosting. On the server realm, all server-side content is readable. PRECONDITION: GMod connected and the chosen realm reachable, else returns isError.",
                         inputSchema = new
                         {
                             type = "object",
@@ -820,7 +820,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                     new
                     {
                         name = "read_gmod_wiki",
-                        description = "Fetches a page from the official Garry's Mod wiki (wiki.facepunch.com/gmod) and returns its text — description, arguments, returns, and examples. Use this to check the real signature or behaviour of a GLua function before writing code, instead of guessing. The `page` is the exact wiki page name.",
+                        description = "Fetches a page from the official Garry's Mod wiki (wiki.facepunch.com/gmod) and returns its text, description, arguments, returns, and examples. Use this to check the real signature or behaviour of a GLua function before writing code, instead of guessing. The `page` is the exact wiki page name.",
                         inputSchema = new
                         {
                             type = "object",
@@ -958,19 +958,49 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                 ? await this.Status.RefreshAsync()
                 : this.Status.GetCached();
 
-            // Packages the user accepted before for this scope come back without a prompt; new ones
-            // get a one-line notice in GTerm's console so the user hears about them directly.
+            // Packages the user accepted before for this scope come back without a prompt. New ones
+            // are put in front of the user right here: get_game_status is the agent's orient call, so
+            // it doubles as tool discovery. The prompt opens in GTerm, this waits briefly for an
+            // answer, and the enabled packages advertise their capabilities in the detail below.
+            RequestResult? auto = null;
             if (refresh)
             {
                 await this.Packages.SyncRememberedAsync(status);
-                this.Packages.AnnounceNew(status);
+                (auto, _) = await this.Packages.RequestAsync(status, fromUser: false, auto: true);
+                if (auto != null && auto.Enabled.Count > 0)
+                    status = await this.Status.RefreshAsync();
             }
+
+            string detail = status.ToDetail(this.Packages.View());
+            detail += RenderAutoPrompt(auto);
 
             // Deliberately not Ok(): the detail body already carries everything the header would say.
             return new
             {
-                content = new[] { new { type = "text", text = status.ToDetail(this.Packages.View()) } }
+                content = new[] { new { type = "text", text = detail } }
             };
+        }
+
+        /// <summary>Appends the outcome of the discovery prompt get_game_status opened, if any.</summary>
+        private static string RenderAutoPrompt(RequestResult? auto)
+        {
+            if (auto == null) return "";
+
+            switch (auto.Outcome)
+            {
+                case RequestOutcome.Answered when auto.Enabled.Count > 0:
+                    return $"\n\nThe user just enabled: {string.Join(", ", auto.Enabled.Select(m => m.Name))} (their capabilities are listed above). ";
+
+                case RequestOutcome.Pending:
+                    return "\n\nA consent prompt for offered packages is open in GTerm's console; the user has not answered yet. "
+                        + "Tell them to look at the GTerm window, then call get_game_status again to see what they enabled.";
+
+                case RequestOutcome.Cancelled:
+                    return "\n\nThe user dismissed the offer of packages for now. Do not push; they can enable later by typing `packages` in GTerm.";
+
+                default:
+                    return "";
+            }
         }
 
         #region Tool packages
@@ -1052,26 +1082,18 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                 GameStatus status = await this.Status.RefreshAsync();
                 await this.Packages.SyncRememberedAsync(status);
 
-                (RequestResult? result, PackageError? error) = await this.Packages.RequestAsync(status, fromUser: true);
+                (ToolPackages.ManageResult? result, PackageError? error) = await this.Packages.ManageAsync(status);
                 if (result == null)
                 {
                     Program.WriteNotice($"packages: {error?.Message}");
                     return;
                 }
 
-                switch (result.Outcome)
-                {
-                    case RequestOutcome.NothingPending:
-                        Program.WriteNotice(status.OfferedPackages.Length == 0
-                            ? $"packages: nothing offered for {status.Scope} (no lua/gterm_packages/*.lua visible)"
-                            : $"packages: everything usable is already enabled for {status.Scope}");
-                        foreach ((string name, string problem) in result.Unusable) Program.WriteNotice($"  unusable: {name}: {problem}");
-                        break;
+                foreach ((string name, string problem) in result.Unusable) Program.WriteNotice($"packages: {name} unusable: {problem}");
 
-                    case RequestOutcome.PromptBusy:
-                        Program.WriteNotice("packages: a prompt is already open");
-                        break;
-                }
+                if (result.Cancelled) return;
+                if (result.Enabled.Count == 0 && result.Disabled.Count == 0 && result.Unusable.Count == 0)
+                    Program.WriteNotice($"packages: none visible for {status.Scope}");
             }
             catch (Exception ex)
             {
@@ -1228,7 +1250,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
             outputText.AppendLine($"Collection Duration: {result.CollectionDurationMs:F0}ms");
             outputText.AppendLine($"Lines Captured: {result.Output.Count}");
             outputText.AppendLine();
-            AppendOutput(outputText, result.Output, "(the command printed nothing — this is normal for many commands and does NOT mean it failed)");
+            AppendOutput(outputText, result.Output, "(the command printed nothing, this is normal for many commands and does NOT mean it failed)");
 
             return Ok(outputText.ToString());
         }
@@ -1266,7 +1288,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
             sb.AppendLine($"Collection Duration: {result.CollectionDurationMs:F0}ms");
             sb.AppendLine($"Lines Captured: {result.Output.Count}");
             sb.AppendLine();
-            AppendOutput(sb, result.Output, "(no output captured — the code ran successfully but printed nothing)");
+            AppendOutput(sb, result.Output, "(no output captured, the code ran successfully but printed nothing)");
 
             return Ok(sb.ToString());
         }
@@ -1294,7 +1316,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
 
             this.Status.NoteLiveActivity();
 
-            return Ok($"Syntax OK — the code compiles in the {realm.ToString().ToLowerInvariant()} realm. Nothing was executed.");
+            return Ok($"Syntax OK, the code compiles in the {realm.ToString().ToLowerInvariant()} realm. Nothing was executed.");
         }
 
         private async Task<object> HandleCheckGameFile(JObject? arguments)
@@ -1376,7 +1398,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
 
             if (recent.Count == 0)
             {
-                sb.AppendLine("(console history is empty — GMod may not be connected, or nothing has printed yet)");
+                sb.AppendLine("(console history is empty, GMod may not be connected, or nothing has printed yet)");
             }
             else
             {
@@ -1464,7 +1486,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                 case GameFileOutcome.NotReadable:
                     return Err($"The running game cannot read '{path}' from the '{searchPath}' search path in the {realmName} realm.\n\n"
                         + (realm == LuaRealm.Client
-                            ? "Your client does not have this file locally — it is readable only if it is in your own addons/ or a mounted Workshop addon. A file that exists only on a server you joined is NOT sent to clients as a readable file. If you are hosting, try realm=\"server\"."
+                            ? "Your client does not have this file locally, it is readable only if it is in your own addons/ or a mounted Workshop addon. A file that exists only on a server you joined is NOT sent to clients as a readable file. If you are hosting, try realm=\"server\"."
                             : "The file does not exist at that path/search-path on the server. Try searchPath=\"GAME\" for all mounted content.")
                         + "\n\nUse check_game_file to see exactly where the game can see the path.");
 
@@ -1472,7 +1494,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
                     this.Status.NoteLiveActivity();
 
                     StringBuilder sb = new();
-                    sb.AppendLine($"Read '{path}' from the '{searchPath}' search path ({realmName} realm) — {result.Size} bytes.");
+                    sb.AppendLine($"Read '{path}' from the '{searchPath}' search path ({realmName} realm), {result.Size} bytes.");
                     if (result.Truncated) sb.AppendLine($"NOTE: truncated to {maxSizeKB}KB; the file is larger. Raise maxSizeKB for more.");
                     if (result.LooksBinary) sb.AppendLine("NOTE: this looks like a binary file; the text below may be garbled.");
                     sb.AppendLine();
@@ -1641,7 +1663,7 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
             string realmName = realm.ToString().ToLowerInvariant();
 
             StringBuilder sb = new();
-            sb.AppendLine($"The Lua never executed in the {realmName} realm — GTerm sent the command but the game never ran it.");
+            sb.AppendLine($"The Lua never executed in the {realmName} realm, GTerm sent the command but the game never ran it.");
             sb.AppendLine();
             sb.AppendLine(realm == LuaRealm.Client
                 ? "Most likely sv_allowcslua is 0 (the default), which blocks lua_openscript_cl. Set 'sv_allowcslua 1' if you own the server, or use realm=\"server\"."
