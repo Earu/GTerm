@@ -1195,16 +1195,16 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
             LuaScriptResult result = await this.Packages.InvokeAsync(manifest, tool, args, timeoutMs);
             if (!result.Success) return Err(result.Error ?? "Package tool execution failed");
 
-            if (result.TryGetSentinel(GTermSentinels.LuaErr, out Sentinel error))
+            if (result.TryGetLuaError(out string error))
             {
-                if (error.Payload.Contains(ToolPackages.HashMismatchToken, StringComparison.Ordinal))
+                if (error.Contains(ToolPackages.HashMismatchToken, StringComparison.Ordinal))
                 {
                     this.Packages.DisableForHashMismatch(package);
                     return Err($"Package '{package}' was disabled: its file changed since the user accepted it, so nothing ran. "
                         + "Call get_game_status; request_tool_packages lets the user review the new version in GTerm.");
                 }
 
-                return Err($"Lua error in {package}/{name} ({realmName} realm): {error.Payload}\n\n{RenderOutput(result)}");
+                return Err($"Lua error in {package}/{name} ({realmName} realm):\n{error}\n\n{RenderOutput(result)}");
             }
 
             if (!result.Executed) return Err(DidNotExecute(tool.Realm, result));
@@ -1273,8 +1273,8 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
             LuaScriptResult result = await this.LuaExecutor.ExecuteLuaAsync(code, realm, timeoutMs);
             if (!result.Success) return Err(result.Error ?? "Lua execution failed");
 
-            if (result.TryGetSentinel(GTermSentinels.LuaErr, out Sentinel error))
-                return Err($"Lua error in the {realm.ToString().ToLowerInvariant()} realm: {error.Payload}\n\n{RenderOutput(result)}");
+            if (result.TryGetLuaError(out string error))
+                return Err($"Lua error in the {realm.ToString().ToLowerInvariant()} realm:\n{error}\n\n{RenderOutput(result)}");
 
             if (!result.Executed) return Err(DidNotExecute(realm, result));
 
@@ -1312,6 +1312,9 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
             if (result.TryGetSentinel(GTermSentinels.SyntaxErr, out Sentinel error))
                 return Err($"Syntax error (nothing was executed): {error.Payload}");
 
+            if (result.TryGetLuaError(out string luaError))
+                return Err($"Lua error in GTerm's validator: {luaError}");
+
             if (!result.Executed) return Err(DidNotExecute(realm, result));
 
             this.Status.NoteLiveActivity();
@@ -1334,6 +1337,8 @@ GTerm drives a running Garry's Mod through its console command buffer. Nothing w
 
             LuaScriptResult result = await this.LuaExecutor.CheckGameFileAsync(path, realm);
             if (!result.Success) return Err(result.Error ?? "File check failed");
+
+            if (result.TryGetLuaError(out string luaError)) return Err($"Lua error in the file check: {luaError}");
 
             if (!result.TryGetSentinel(GTermSentinels.File, out Sentinel file)) return Err(DidNotExecute(realm, result));
 

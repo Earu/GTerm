@@ -108,6 +108,18 @@ namespace GTerm.MCP
 
         private static readonly TimeSpan OrphanAge = TimeSpan.FromMinutes(2);
 
+        private const string TracebackFn = "__gterm_tb";
+
+        private const string TracebackHandler =
+            "local function " + TracebackFn + "(e) "
+            + "local s = debug.traceback(tostring(e), 2) "
+            + "local c = string.find(s, \"\\n%s*%[C%]: in function 'xpcall'\") "
+            + "return string.sub(c and string.sub(s, 1, c - 1) or s, 1, 3000) "
+            + "end";
+
+        private static string EmitError(string messageExpression)
+            => GTermSentinels.LuaEmit(GTermSentinels.LuaErr, $"util.TableToJSON({{err = {messageExpression}}})");
+
         internal LuaExecutor(CommandCollector collector)
         {
             this.Collector = collector;
@@ -173,6 +185,9 @@ namespace GTerm.MCP
 
                 if (!run.Success)
                     return GameFileResult.Fail(run.Error ?? "Read command failed");
+
+                if (run.TryGetLuaError(out string luaError))
+                    return GameFileResult.Fail($"Lua error in the reader: {luaError}");
 
                 if (!run.TryGetSentinel(GTermSentinels.GameFile, out Sentinel sentinel))
                     return new GameFileResult { Outcome = GameFileOutcome.NotExecuted };
@@ -243,6 +258,9 @@ namespace GTerm.MCP
                 if (!run.Success)
                     return RelayResult.Fail(run.Error ?? "Relay command failed");
 
+                if (run.TryGetLuaError(out string luaError))
+                    return new RelayResult { Outcome = RelayOutcome.Refused, Error = $"Lua error: {luaError}" };
+
                 if (!run.TryGetSentinel(GTermSentinels.Relay, out Sentinel sentinel))
                     return new RelayResult { Outcome = RelayOutcome.NotExecuted };
 
@@ -304,6 +322,9 @@ namespace GTerm.MCP
 
                 if (!run.Success)
                     return ScreenCaptureResult.Fail(run.Error ?? "Capture command failed");
+
+                if (run.TryGetLuaError(out string luaError))
+                    return new ScreenCaptureResult { Outcome = ScreenCaptureOutcome.NotCaptured, Error = $"Lua error in the capture script: {luaError}" };
 
                 // The capture lands inside a PostRender hook, so a game that is not drawing frames
                 // (minimised, paused at a loading screen) never emits the sentinel at all.
@@ -399,7 +420,7 @@ namespace GTerm.MCP
                 SweepOrphans(gtermDir, "*.lua");
 
                 LocalLogger.WriteLine($"Writing Lua script to: {filePath}");
-                await File.WriteAllTextAsync(filePath, luaSource, cancellationToken);
+                await File.WriteAllTextAsync(filePath, Guard(luaSource), cancellationToken);
 
                 // lua_openscript runs in the server realm, lua_openscript_cl in the client realm.
                 // Both resolve relative to garrysmod/lua/.
@@ -412,10 +433,13 @@ namespace GTerm.MCP
                 // completionMarkers proves the script ran; earlyExitMarkers decides when to stop
                 // collecting. They differ for execute_lua_code: it stops early on an error but, on
                 // success, keeps listening for the full window so asynchronous prints are captured.
-                CommandResult result = await this.Collector.ExecuteCommandAsync(
-                    command, collectionWindowMs, earlyExitMarkers ?? completionMarkers, cancellationToken: cancellationToken);
+                IReadOnlyCollection<string> completion = [.. completionMarkers, GTermSentinels.LuaErr];
+                IReadOnlyCollection<string> earlyExit = [.. earlyExitMarkers ?? completionMarkers, GTermSentinels.LuaErr];
 
-                bool executed = result.Success && result.Sentinels.Any(s => completionMarkers.Contains(s.Marker));
+                CommandResult result = await this.Collector.ExecuteCommandAsync(
+                    command, collectionWindowMs, earlyExit, cancellationToken: cancellationToken);
+
+                bool executed = result.Success && result.Sentinels.Any(s => completion.Contains(s.Marker));
 
                 // Only delete once a sentinel proves the script actually ran. The engine queues our
                 // command into its global command buffer, so deleting eagerly can race a script that
@@ -457,10 +481,22 @@ namespace GTerm.MCP
             sb.AppendLine(luaCode);
             sb.Append(']').Append(eq).AppendLine("]");
             sb.AppendLine("local __f = CompileString(__src, \"gterm_body\", false)");
-            sb.AppendLine($"if isstring(__f) then {GTermSentinels.LuaEmit(GTermSentinels.LuaErr, "\"syntax: \" .. __f")} return end");
-            sb.AppendLine("local __ok, __err = pcall(__f)");
+            sb.AppendLine($"if isstring(__f) then {EmitError("\"syntax: \" .. __f")} return end");
+            sb.AppendLine($"local __ok, __err = xpcall(__f, {TracebackFn})");
             sb.AppendLine($"if __ok then {GTermSentinels.LuaEmit(GTermSentinels.LuaOk, "\"ok\"")}");
-            sb.AppendLine($"else {GTermSentinels.LuaEmit(GTermSentinels.LuaErr, "tostring(__err)")} end");
+            sb.AppendLine($"else {EmitError("__err")} end");
+
+            return sb.ToString();
+        }
+
+        private static string Guard(string luaSource)
+        {
+            StringBuilder sb = new();
+            sb.AppendLine(TracebackHandler);
+            sb.AppendLine("local __gterm_ok, __gterm_err = xpcall(function()");
+            sb.AppendLine(luaSource);
+            sb.AppendLine($"end, {TracebackFn})");
+            sb.AppendLine($"if not __gterm_ok then {EmitError("__gterm_err")} end");
 
             return sb.ToString();
         }
@@ -543,6 +579,7 @@ namespace GTerm.MCP
             sb.AppendLine($"local __rx, __ry, __rw, __rh, __q = {x}, {y}, {width}, {height}, {quality}");
             sb.AppendLine("hook.Add(\"PostRender\", __hook, function()");
             sb.AppendLine("  hook.Remove(\"PostRender\", __hook)");
+            sb.AppendLine("  local __hok, __herr = xpcall(function()");
             sb.AppendLine("  local __sw, __sh = ScrW(), ScrH()");
             sb.AppendLine("  local __w0 = __rw > 0 and __rw or __sw");
             sb.AppendLine("  local __h0 = __rh > 0 and __rh or __sh");
@@ -562,6 +599,8 @@ namespace GTerm.MCP
             sb.Append("    file.Write(").Append(GTermSentinels.LuaLiteral(relayRel)).AppendLine(", __data)");
             sb.AppendLine("  end");
             sb.AppendLine($"  {GTermSentinels.LuaEmit(GTermSentinels.Shot, payload)}");
+            sb.AppendLine($"  end, {TracebackFn})");
+            sb.AppendLine($"  if not __hok then {EmitError("__herr")} end");
             sb.AppendLine("end)");
 
             return sb.ToString();
@@ -632,6 +671,23 @@ namespace GTerm.MCP
 
             sentinel = default;
             return false;
+        }
+
+        internal bool TryGetLuaError(out string message)
+        {
+            message = string.Empty;
+            if (!TryGetSentinel(GTermSentinels.LuaErr, out Sentinel sentinel)) return false;
+
+            try
+            {
+                message = JObject.Parse(sentinel.Payload)["err"]?.ToString() ?? sentinel.Payload;
+            }
+            catch (Newtonsoft.Json.JsonException)
+            {
+                message = sentinel.Payload;
+            }
+
+            return true;
         }
     }
 }
