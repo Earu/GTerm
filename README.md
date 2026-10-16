@@ -31,7 +31,7 @@ Garry's Mod external console software.
 GTerm installs its module on startup. This can be tuned with launch arguments (or the same keys in `Config.json`):
 - `--skipgamefiles` - Do not modify the game's Lua files to `require("gterm")`.
 - `--skipmodule` - Do not drop the module binary into `garrysmod/lua/bin`.
-- `--modulestate cl|sv` - Name the module binary for the client (`gmcl_gterm_*.dll`) or server (`gmsv_gterm_*.dll`, default) state.
+- `--realm cl|sv` - Name the module binary for the client (`gmcl_gterm_*.dll`) or server (`gmsv_gterm_*.dll`, default) realm.
 
 ## WebSocket API
 GTerm includes a WebSocket server for console streaming and command execution.

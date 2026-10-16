@@ -304,10 +304,10 @@ namespace GTerm
             await File.WriteAllBytesAsync(outputPath, content);
         }
 
-        private static async Task<bool> InstallBinary(bool isX64, string luaBinPath, ModuleState state)
+        private static async Task<bool> InstallBinary(bool isX64, string luaBinPath, ModuleRealm realm)
         {
             string moduleName = GetBinaryFileName(isX64);
-            string targetModuleFilePath = Path.Combine(luaBinPath, state == ModuleState.Client ? moduleName.Replace("gmsv_", "gmcl_") : moduleName);
+            string targetModuleFilePath = Path.Combine(luaBinPath, realm == ModuleRealm.Client ?moduleName.Replace("gmsv_", "gmcl_") : moduleName);
             if (!File.Exists(targetModuleFilePath))
             {
                 string moduleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/prebuilt-bins/{moduleName}";
@@ -355,7 +355,7 @@ namespace GTerm
                     }
 
                     bool isX64 = IsGmodX64(gmodBinPath);
-                    bool justInstalledBin = await InstallBinary(isX64, luaBinPath, config.ModuleState);
+                    bool justInstalledBin = await InstallBinary(isX64, luaBinPath, config.ModuleRealm);
                     if (justInstalledBin) {
                         modifiedGameFiles = true;
                     }

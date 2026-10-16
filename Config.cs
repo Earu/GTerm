@@ -22,7 +22,7 @@ namespace GTerm
         public string? MCPSecret { get; set; }
         public bool SkipGameFiles { get; set; }
         public bool SkipModule { get; set; }
-        public string? ModuleState { get; set; }
+        public string? Realm { get; set; }
 
         /// <summary>Tool packages the user accepted, written by GTerm itself (see MCP/ToolPackages.cs).</summary>
         public ToolPackageConsentEntry[]? ToolPackageConsent { get; set; }
@@ -37,8 +37,8 @@ namespace GTerm
         public DateTime? AcceptedAt { get; set; }
     }
 
-    /// <summary>The Lua state the module binary is named for: its gmsv_/gmcl_ prefix.</summary>
-    internal enum ModuleState
+    /// <summary>The realm the module binary is named for: its gmsv_/gmcl_ prefix.</summary>
+    internal enum ModuleRealm
     {
         /// <summary>gmcl_gterm_*.dll</summary>
         Client,
@@ -67,7 +67,7 @@ namespace GTerm
         /// <summary>Do not download the module binary into lua/bin.</summary>
         internal bool SkipModule { get; set; } = false;
 
-        internal ModuleState ModuleState { get; set; } = ModuleState.Server;
+        internal ModuleRealm ModuleRealm { get; set; } = ModuleRealm.Server;
 
         private static readonly object FileLock = new();
 
@@ -166,7 +166,7 @@ namespace GTerm
             this.MCPSecret = cfg.MCPSecret;
             this.SkipGameFiles = cfg.SkipGameFiles;
             this.SkipModule = cfg.SkipModule;
-            this.ModuleState = ParseModuleState(cfg.ModuleState);
+            this.ModuleRealm = ParseModuleRealm(cfg.Realm);
 
             if (cfg.ExclusionPatterns != null)
             {
@@ -186,22 +186,22 @@ namespace GTerm
             LocalLogger.WriteLine("MCP Secret: " + (string.IsNullOrWhiteSpace(this.MCPSecret) ? "(none)" : "***configured***"));
             LocalLogger.WriteLine("Skip game files: " + this.SkipGameFiles);
             LocalLogger.WriteLine("Skip module: " + this.SkipModule);
-            LocalLogger.WriteLine("Module state: " + this.ModuleState);
+            LocalLogger.WriteLine("Module realm: " + this.ModuleRealm);
             LocalLogger.WriteLine("Exclusion Patterns: \n", string.Join("\n", this.ExclusionPatterns.Select(r => r.ToString())));
         }
 
-        private static ModuleState ParseModuleState(string? value)
+        private static ModuleRealm ParseModuleRealm(string? value)
         {
             switch (value?.Trim().ToLowerInvariant())
             {
                 case "cl" or "client":
-                    return ModuleState.Client;
+                    return ModuleRealm.Client;
                 case null or "":
                 case "sv" or "server":
-                    return ModuleState.Server;
+                    return ModuleRealm.Server;
                 default:
-                    LocalLogger.WriteLine($"Unknown module state '{value}', expected CL or SV. Defaulting to SV");
-                    return ModuleState.Server;
+                    LocalLogger.WriteLine($"Unknown module realm '{value}', expected CL or SV. Defaulting to SV");
+                    return ModuleRealm.Server;
             }
         }
 
