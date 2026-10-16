@@ -304,10 +304,10 @@ namespace GTerm
             await File.WriteAllBytesAsync(outputPath, content);
         }
 
-        private static async Task<bool> InstallBinary(bool isX64, string luaBinPath)
+        private static async Task<bool> InstallBinary(bool isX64, string luaBinPath, ModuleState state)
         {
             string moduleName = GetBinaryFileName(isX64);
-            string targetModuleFilePath = Path.Combine(luaBinPath, moduleName);
+            string targetModuleFilePath = Path.Combine(luaBinPath, state == ModuleState.Client ? moduleName.Replace("gmsv_", "gmcl_") : moduleName);
             if (!File.Exists(targetModuleFilePath))
             {
                 string moduleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/prebuilt-bins/{moduleName}";
@@ -333,7 +333,7 @@ namespace GTerm
             return isX64;
         }
 
-        internal static async Task<(bool, bool)> InstallGTerm()
+        internal static async Task<(bool, bool)> InstallGTerm(Config config)
         {
             bool modifiedGameFiles = false;
             bool success = false;
@@ -346,21 +346,23 @@ namespace GTerm
                 string luaPath = Path.Combine(baseGmodPath, "garrysmod/lua");
                 string luaBinPath = Path.Combine(luaPath, "bin");
 
-                if (!Directory.Exists(luaBinPath))
+                if (!config.SkipModule)
                 {
-                    Directory.CreateDirectory(luaBinPath);
-                    modifiedGameFiles = true;
-                }
+                    if (!Directory.Exists(luaBinPath))
+                    {
+                        Directory.CreateDirectory(luaBinPath);
+                        modifiedGameFiles = true;
+                    }
 
-                bool isX64 = IsGmodX64(gmodBinPath);
-                bool justInstalledBin = await InstallBinary(isX64, luaBinPath);
-                if (justInstalledBin) {
-                    modifiedGameFiles = true;
+                    bool isX64 = IsGmodX64(gmodBinPath);
+                    bool justInstalledBin = await InstallBinary(isX64, luaBinPath, config.ModuleState);
+                    if (justInstalledBin) {
+                        modifiedGameFiles = true;
+                    }
                 }
 
                 string menuInitFilePath = Path.Combine(luaPath, "menu/menu.lua");
-                string menuInitLuaCode = File.ReadAllText(menuInitFilePath);
-                if (!menuInitLuaCode.Contains("gterm", StringComparison.CurrentCulture))
+                if (!config.SkipGameFiles && !File.ReadAllText(menuInitFilePath).Contains("gterm", StringComparison.CurrentCulture))
                 {
                     File.AppendAllText(menuInitFilePath, "\nrequire(\"gterm\")\n");
                     modifiedGameFiles = true;
