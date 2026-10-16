@@ -20,6 +20,9 @@ namespace GTerm
         public int? MCPCollectionWindowMs { get; set; }
         public int? MCPPort { get; set; }
         public string? MCPSecret { get; set; }
+        public bool SkipGameFiles { get; set; }
+        public bool SkipModule { get; set; }
+        public string? ModuleState { get; set; }
 
         /// <summary>Tool packages the user accepted, written by GTerm itself (see MCP/ToolPackages.cs).</summary>
         public ToolPackageConsentEntry[]? ToolPackageConsent { get; set; }
@@ -32,6 +35,16 @@ namespace GTerm
         public string? Package { get; set; }
         public string? Hash { get; set; }
         public DateTime? AcceptedAt { get; set; }
+    }
+
+    /// <summary>The Lua state the module binary is named for: its gmsv_/gmcl_ prefix.</summary>
+    internal enum ModuleState
+    {
+        /// <summary>gmcl_gterm_*.dll</summary>
+        Client,
+
+        /// <summary>gmsv_gterm_*.dll, the default.</summary>
+        Server,
     }
 
     internal class Config
@@ -47,6 +60,14 @@ namespace GTerm
         internal int MCPCollectionWindowMs { get; set; } = 1000;
         internal int MCPPort { get; set; } = 27513;
         internal string? MCPSecret { get; set; }
+
+        /// <summary>Do not touch the game's Lua files to require the module.</summary>
+        internal bool SkipGameFiles { get; set; } = false;
+
+        /// <summary>Do not download the module binary into lua/bin.</summary>
+        internal bool SkipModule { get; set; } = false;
+
+        internal ModuleState ModuleState { get; set; } = ModuleState.Server;
 
         private static readonly object FileLock = new();
 
@@ -143,6 +164,9 @@ namespace GTerm
             this.MCPCollectionWindowMs = cfg.MCPCollectionWindowMs ?? 1000;
             this.MCPPort = cfg.MCPPort ?? 27513;
             this.MCPSecret = cfg.MCPSecret;
+            this.SkipGameFiles = cfg.SkipGameFiles;
+            this.SkipModule = cfg.SkipModule;
+            this.ModuleState = ParseModuleState(cfg.ModuleState);
 
             if (cfg.ExclusionPatterns != null)
             {
@@ -160,7 +184,25 @@ namespace GTerm
             LocalLogger.WriteLine("MCP Collection Window: " + this.MCPCollectionWindowMs + "ms");
             LocalLogger.WriteLine("MCP Port: " + this.MCPPort);
             LocalLogger.WriteLine("MCP Secret: " + (string.IsNullOrWhiteSpace(this.MCPSecret) ? "(none)" : "***configured***"));
+            LocalLogger.WriteLine("Skip game files: " + this.SkipGameFiles);
+            LocalLogger.WriteLine("Skip module: " + this.SkipModule);
+            LocalLogger.WriteLine("Module state: " + this.ModuleState);
             LocalLogger.WriteLine("Exclusion Patterns: \n", string.Join("\n", this.ExclusionPatterns.Select(r => r.ToString())));
+        }
+
+        private static ModuleState ParseModuleState(string? value)
+        {
+            switch (value?.Trim().ToLowerInvariant())
+            {
+                case "cl" or "client":
+                    return ModuleState.Client;
+                case null or "":
+                case "sv" or "server":
+                    return ModuleState.Server;
+                default:
+                    LocalLogger.WriteLine($"Unknown module state '{value}', expected CL or SV. Defaulting to SV");
+                    return ModuleState.Server;
+            }
         }
 
         private static Dictionary<string, List<string>> ParseCLIArgs(string[] args)

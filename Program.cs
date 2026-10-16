@@ -94,7 +94,7 @@ namespace GTerm
                 }
             }
 
-            Task.Run(GmodInterop.InstallGTerm); // try to install the gterm module
+            Task.Run(() => GmodInterop.InstallGTerm(Config)); // try to install the gterm module
 
             if (Config.StartAsGmod)
             {
