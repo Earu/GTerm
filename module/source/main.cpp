@@ -25,11 +25,48 @@
 #include <Platform.hpp>
 #include <color.h>
 #include <eiface.h>
-#include <tier0/dbg.h>
 
-#if ARCHITECTURE_IS_X86_64
-#include <logging.h>
-#endif
+namespace Tier0
+{
+	typedef int32_t SpewRetval_t;
+	typedef SpewRetval_t (*SpewOutputFunc_t)(int32_t spewType, const char* pMsg);
+
+	struct LoggingContext_t
+	{
+		int32_t m_ChannelID;
+		int32_t m_Flags;
+		int32_t m_Severity;
+		Color m_Color;
+	};
+
+	struct LoggingChannel_t
+	{
+		int32_t m_ID;
+		int32_t m_Flags;
+		int32_t m_MinimumSeverity;
+		Color m_SpewColor;
+		char m_Name[32];
+		void* m_pFirstTag;
+	};
+
+	class ILoggingListener
+	{
+	public:
+		virtual void Log(const LoggingContext_t* pContext, const char* pMessage) = 0;
+	};
+
+	static void (*SpewOutputFunc)(SpewOutputFunc_t func) = nullptr;
+	static SpewOutputFunc_t (*GetSpewOutputFunc)() = nullptr;
+	static const char* (*GetSpewOutputGroup)() = nullptr;
+	static int (*GetSpewOutputLevel)() = nullptr;
+	static const Color* (*GetSpewOutputColor)() = nullptr;
+
+	static void (*LoggingSystem_RegisterLoggingListener)(ILoggingListener* pListener) = nullptr;
+	static void (*LoggingSystem_UnregisterLoggingListener)(ILoggingListener* pListener) = nullptr;
+	static void (*LoggingSystem_PushLoggingState)(bool bThreadLocal, bool bClearState) = nullptr;
+	static void (*LoggingSystem_PopLoggingState)(bool bThreadLocal) = nullptr;
+	static const LoggingChannel_t* (*LoggingSystem_GetChannel)(int32_t channelID) = nullptr;
+}
 
 #ifdef _WIN32
 typedef SOCKET socket_t;
@@ -99,15 +136,12 @@ static void SendBuffer(const uint8_t* data, size_t size)
 		serverConnected = false;
 }
 
-#if ARCHITECTURE_IS_X86_64
-class XConsoleListener : public ILoggingListener
+class GTermConsoleListener : public Tier0::ILoggingListener
 {
 public:
-	XConsoleListener(bool bQuietPrintf = false, bool bQuietDebugger = false) {}
-
-	void Log(const LoggingContext_t* pContext, const char* pMessage) override
+	void Log(const Tier0::LoggingContext_t* pContext, const char* pMessage) override
 	{
-		const CLoggingSystem::LoggingChannel_t* chan = LoggingSystem_GetChannel(pContext->m_ChannelID);
+		const Tier0::LoggingChannel_t* chan = Tier0::LoggingSystem_GetChannel(pContext->m_ChannelID);
 		const Color* color = &pContext->m_Color;
 		int size = 12 + std::strlen(chan->m_Name) + std::strlen(pMessage);
 
@@ -115,7 +149,7 @@ public:
 		buffer.Reserve(size);
 
 		buffer <<
-			static_cast<int32_t>(chan->m_ID) <<
+			chan->m_ID <<
 			pContext->m_Severity <<
 			chan->m_Name <<
 			color->GetRawColor() <<
@@ -125,22 +159,50 @@ public:
 	}
 };
 
-ILoggingListener* listener = new XConsoleListener();
-#else
-static SpewOutputFunc_t spewFunction = nullptr;
-static SpewRetval_t EngineSpewReceiver(SpewType_t type, const char* msg)
+static GTermConsoleListener listener;
+static bool useLoggingSystem = false;
+
+template<typename T>
+static bool ResolveSymbol(const SourceSDK::ModuleLoader& module, T& out, const char* name)
+{
+	out = reinterpret_cast<T>(module.GetSymbol(name));
+	return out != nullptr;
+}
+
+static bool ResolveLoggingSystem(const SourceSDK::ModuleLoader& tier0)
+{
+	return
+		ResolveSymbol(tier0, Tier0::LoggingSystem_RegisterLoggingListener, "LoggingSystem_RegisterLoggingListener") &&
+		ResolveSymbol(tier0, Tier0::LoggingSystem_UnregisterLoggingListener, "LoggingSystem_UnregisterLoggingListener") &&
+		ResolveSymbol(tier0, Tier0::LoggingSystem_PushLoggingState, "LoggingSystem_PushLoggingState") &&
+		ResolveSymbol(tier0, Tier0::LoggingSystem_PopLoggingState, "LoggingSystem_PopLoggingState") &&
+		ResolveSymbol(tier0, Tier0::LoggingSystem_GetChannel, "LoggingSystem_GetChannel");
+}
+
+static bool ResolveSpew(const SourceSDK::ModuleLoader& tier0)
+{
+	return
+		ResolveSymbol(tier0, Tier0::SpewOutputFunc, "SpewOutputFunc") &&
+		ResolveSymbol(tier0, Tier0::GetSpewOutputFunc, "GetSpewOutputFunc") &&
+		ResolveSymbol(tier0, Tier0::GetSpewOutputGroup, "GetSpewOutputGroup") &&
+		ResolveSymbol(tier0, Tier0::GetSpewOutputLevel, "GetSpewOutputLevel") &&
+		ResolveSymbol(tier0, Tier0::GetSpewOutputColor, "GetSpewOutputColor");
+}
+
+static Tier0::SpewOutputFunc_t spewFunction = nullptr;
+static Tier0::SpewRetval_t EngineSpewReceiver(int32_t type, const char* msg)
 {
 	if (!serverConnected)
 		return spewFunction(type, msg);
 
-	const Color* color = GetSpewOutputColor();
+	const Color* color = Tier0::GetSpewOutputColor();
 	MultiLibrary::ByteBuffer buffer;
 	buffer.Reserve(512);
 
 	buffer <<
-		static_cast<int32_t>(type) <<
-		GetSpewOutputLevel() <<
-		GetSpewOutputGroup() <<
+		type <<
+		Tier0::GetSpewOutputLevel() <<
+		Tier0::GetSpewOutputGroup() <<
 		color->GetRawColor() <<
 		msg;
 
@@ -148,7 +210,6 @@ static SpewRetval_t EngineSpewReceiver(SpewType_t type, const char* msg)
 
 	return spewFunction(type, msg);
 }
-#endif
 
 static void RunCommand(std::string cmd)
 {
@@ -257,6 +318,13 @@ static void ServerThread()
 
 GMOD_MODULE_OPEN()
 {
+	{
+		SourceSDK::ModuleLoader tier0("tier0");
+		useLoggingSystem = ResolveLoggingSystem(tier0);
+		if (!useLoggingSystem && !ResolveSpew(tier0))
+			LUA->ThrowError("failed to find a console output hook in tier0");
+	}
+
 #ifdef _WIN32
 	WSADATA wsaData;
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -299,26 +367,31 @@ GMOD_MODULE_OPEN()
 
 	serverThread = std::thread(ServerThread);
 
-#if ARCHITECTURE_IS_X86_64
-	LoggingSystem_PushLoggingState(false, false);
-	LoggingSystem_RegisterLoggingListener(listener);
-#else
-	spewFunction = GetSpewOutputFunc();
-	SpewOutputFunc(EngineSpewReceiver);
-#endif
+	if (useLoggingSystem)
+	{
+		Tier0::LoggingSystem_PushLoggingState(false, false);
+		Tier0::LoggingSystem_RegisterLoggingListener(&listener);
+	}
+	else
+	{
+		spewFunction = Tier0::GetSpewOutputFunc();
+		Tier0::SpewOutputFunc(EngineSpewReceiver);
+	}
 
 	return 0;
 }
 
 GMOD_MODULE_CLOSE()
 {
-#if ARCHITECTURE_IS_X86_64
-	LoggingSystem_UnregisterLoggingListener(listener);
-	LoggingSystem_PopLoggingState(false);
-	delete listener;
-#else
-	SpewOutputFunc(spewFunction);
-#endif
+	if (useLoggingSystem)
+	{
+		Tier0::LoggingSystem_UnregisterLoggingListener(&listener);
+		Tier0::LoggingSystem_PopLoggingState(false);
+	}
+	else if (spewFunction != nullptr)
+	{
+		Tier0::SpewOutputFunc(spewFunction);
+	}
 
 	serverShutdown = true;
 
