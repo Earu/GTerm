@@ -22,6 +22,7 @@ namespace GTerm
         public string? MCPSecret { get; set; }
         public bool SkipGameFiles { get; set; }
         public bool SkipModule { get; set; }
+        public bool SkipModuleUpdate { get; set; }
         public string? Realm { get; set; }
 
         /// <summary>Tool packages the user accepted, written by GTerm itself (see MCP/ToolPackages.cs).</summary>
@@ -66,6 +67,8 @@ namespace GTerm
 
         /// <summary>Do not download the module binary into lua/bin.</summary>
         internal bool SkipModule { get; set; } = false;
+
+        internal bool SkipModuleUpdate { get; set; } = false;
 
         internal ModuleRealm ModuleRealm { get; set; } = ModuleRealm.Server;
 
@@ -166,6 +169,7 @@ namespace GTerm
             this.MCPSecret = cfg.MCPSecret;
             this.SkipGameFiles = cfg.SkipGameFiles;
             this.SkipModule = cfg.SkipModule;
+            this.SkipModuleUpdate = cfg.SkipModuleUpdate;
             this.ModuleRealm = ParseModuleRealm(cfg.Realm);
 
             if (cfg.ExclusionPatterns != null)
@@ -186,6 +190,7 @@ namespace GTerm
             LocalLogger.WriteLine("MCP Secret: " + (string.IsNullOrWhiteSpace(this.MCPSecret) ? "(none)" : "***configured***"));
             LocalLogger.WriteLine("Skip game files: " + this.SkipGameFiles);
             LocalLogger.WriteLine("Skip module: " + this.SkipModule);
+            LocalLogger.WriteLine("Skip module update: " + this.SkipModuleUpdate);
             LocalLogger.WriteLine("Module realm: " + this.ModuleRealm);
             LocalLogger.WriteLine("Exclusion Patterns: \n", string.Join("\n", this.ExclusionPatterns.Select(r => r.ToString())));
         }

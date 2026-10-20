@@ -89,37 +89,6 @@ namespace GTerm
             return false;
         }
 
-        private static bool TryGetMountedBeta(out bool isX64)
-        {
-            if (TryGetSteamVDFPath(out string vdfPath))
-            {
-                try
-                {
-                    string? vdfDirPath = Path.GetDirectoryName(vdfPath);
-                    if (vdfDirPath != null)
-                    {
-                        string gmodManifiestPath = Path.Join(vdfDirPath, "appmanifest_4000.acf");
-                        if (File.Exists(gmodManifiestPath))
-                        {
-                            FileStream gmodManifestFile = File.OpenRead(gmodManifiestPath);
-                            VdfDeserializer deserializer = new();
-                            dynamic result = deserializer.Deserialize(gmodManifestFile);
-
-                            isX64 = result?.AppState?.UserConfig?.BetaKey == "x86-64";
-                            return true;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LocalLogger.WriteLine($"Could not find Garry's Mod manifest, assuming branch\n" + ex.Message);
-                }
-            }
-
-            isX64 = false;
-            return false;
-        }
-
         private static bool IsGmodRunningWithProton()
         {
             // Proton is a Linux-only concept
@@ -211,48 +180,12 @@ namespace GTerm
                             if (toBin)
                             {
                                 string gmodPathDir = gmodPath;
-                                bool gotBeta = TryGetMountedBeta(out bool isX64);
                                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || IsGmodRunningWithProton())
-                                {
-                                    if (gotBeta)
-                                    {
-                                        gmodPath = isX64
-                                            ? Path.Combine(gmodPathDir, "bin/win64/gmod.exe")
-                                            : Path.Combine(gmodPathDir, "gmod.exe");
-                                    }
-                                    else
-                                    {
-                                        // get x64 bin path in priority
-                                        string gmodPathX64 = Path.Combine(gmodPathDir, "bin/win64/gmod.exe");
-                                        string gmodPathX86 = Path.Combine(gmodPathDir, "gmod.exe");
-                                        if (File.Exists(gmodPathX64))
-                                            gmodPath = gmodPathX64;
-                                        else if (File.Exists(gmodPathX86))
-                                            gmodPath = gmodPathX86;
-                                    }
-
-                                    if (!File.Exists(gmodPath))
-                                        gmodPath = Path.Combine(gmodPathDir, "hl2.exe");
-                                }
+                                    gmodPath = FirstExistingPath(gmodPathDir, "bin/win64/gmod.exe", "gmod.exe", "hl2.exe");
                                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                                {
                                     gmodPath = Path.Combine(gmodPathDir, "hl2_osx");
-                                }
                                 else
-                                {
-                                    if (gotBeta) {
-                                        gmodPath = isX64 ? Path.Combine(gmodPathDir, "linux64/gmod") : Path.Combine(gmodPathDir, "hl2_linux");
-
-                                        if (!File.Exists(gmodPath))
-                                            gmodPath = isX64 ? Path.Combine(gmodPathDir, "linux64/srcds") : Path.Combine(gmodPathDir, "srcds");
-                                    }
-                                    else
-                                    {
-                                        gmodPath = Path.Combine(gmodPathDir, "hl2_linux");
-                                        if (!File.Exists(gmodPath))
-                                            gmodPath = Path.Combine(gmodPathDir, "srcds");
-                                    }
-                                }
+                                    gmodPath = FirstExistingPath(gmodPathDir, "linux64/gmod", "linux64/srcds", "hl2_linux", "srcds");
                             }
 
                             return true;
@@ -270,6 +203,18 @@ namespace GTerm
                 gmodPath = string.Empty;
                 return false;
             }
+        }
+
+        private static string FirstExistingPath(string baseDir, params string[] candidates)
+        {
+            foreach (string candidate in candidates)
+            {
+                string path = Path.Combine(baseDir, candidate);
+                if (File.Exists(path))
+                    return path;
+            }
+
+            return Path.Combine(baseDir, candidates[^1]);
         }
 
         private static string GetBinaryFileName(bool isX64)
@@ -294,51 +239,68 @@ namespace GTerm
             return moduleName;
         }
 
-        private static async Task DownloadFileAsync(string url, string outputPath)
+        private static async Task<byte[]> DownloadFileAsync(string url)
         {
             using HttpClient client = new();
             HttpResponseMessage response = await client.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
-            byte[] content = await response.Content.ReadAsByteArrayAsync();
-            await File.WriteAllBytesAsync(outputPath, content);
+            return await response.Content.ReadAsByteArrayAsync();
         }
 
-        private static async Task<bool> InstallBinary(bool isX64, string luaBinPath, ModuleRealm realm)
+        private static async Task WriteModuleAsync(string path, byte[] content)
+        {
+            string stalePath = path + ".old";
+            try
+            {
+                if (File.Exists(stalePath))
+                    File.Delete(stalePath);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            try
+            {
+                await File.WriteAllBytesAsync(path, content);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && File.Exists(path))
+            {
+                File.Move(path, stalePath, true);
+                await File.WriteAllBytesAsync(path, content);
+            }
+        }
+
+        private static async Task<bool> InstallBinary(bool isX64, string luaBinPath, ModuleRealm realm, bool skipUpdate)
         {
             string moduleName = GetBinaryFileName(isX64);
             string targetModuleFilePath = Path.Combine(luaBinPath, realm == ModuleRealm.Client ?moduleName.Replace("gmsv_", "gmcl_") : moduleName);
-            if (!File.Exists(targetModuleFilePath))
-            {
-                string moduleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/prebuilt-bins/{moduleName}";
-                await DownloadFileAsync(moduleUrl, targetModuleFilePath);
+            bool exists = File.Exists(targetModuleFilePath);
+            if (exists && skipUpdate) return false;
 
-                return true;
+            string moduleUrl = $"https://raw.githubusercontent.com/Earu/GTerm/master/prebuilt-bins/{moduleName}";
+            byte[] content = await DownloadFileAsync(moduleUrl);
+            if (exists)
+            {
+                byte[] current = await File.ReadAllBytesAsync(targetModuleFilePath);
+                if (content.AsSpan().SequenceEqual(current))
+                    return false;
             }
 
-            return false;
+            await WriteModuleAsync(targetModuleFilePath, content);
+            LocalLogger.WriteLine(exists ? $"Updated {targetModuleFilePath}" : $"Installed {targetModuleFilePath}");
+
+            return true;
         }
 
-        private static bool IsGmodX64(string gmodBinPath)
-        {
-            // Base assumption in case it fails later (windows can do x86 and x64, linux/mac only x64)
-            bool isX64 = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                || gmodBinPath.Contains("win64", StringComparison.CurrentCulture)
-                || gmodBinPath.Contains("linux64", StringComparison.CurrentCulture);
-
-            // Fetch the gmod manifest to make a safer assumption of the current branch
-            if (TryGetMountedBeta(out bool isBetaX64))
-                isX64 = isBetaX64;
-
-            return isX64;
-        }
+        private static bool[] GetModuleArchitectures()
+            => RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? [true] : [true, false];
 
         internal static async Task<(bool, bool)> InstallGTerm(Config config)
         {
             bool modifiedGameFiles = false;
             bool success = false;
 
-            if (!TryGetGmodPath(out string baseGmodPath, false) || !TryGetGmodPath(out string gmodBinPath)) return (success, modifiedGameFiles);
+            if (!TryGetGmodPath(out string baseGmodPath, false)) return (success, modifiedGameFiles);
 
             try
             {
@@ -354,10 +316,17 @@ namespace GTerm
                         modifiedGameFiles = true;
                     }
 
-                    bool isX64 = IsGmodX64(gmodBinPath);
-                    bool justInstalledBin = await InstallBinary(isX64, luaBinPath, config.ModuleRealm);
-                    if (justInstalledBin) {
-                        modifiedGameFiles = true;
+                    foreach (bool isX64 in GetModuleArchitectures())
+                    {
+                        try
+                        {
+                            if (await InstallBinary(isX64, luaBinPath, config.ModuleRealm, config.SkipModuleUpdate))
+                                modifiedGameFiles = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            LocalLogger.WriteLine($"Could not install {GetBinaryFileName(isX64)}: ", ex.Message);
+                        }
                     }
                 }
 
