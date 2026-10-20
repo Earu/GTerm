@@ -259,14 +259,17 @@ namespace GTerm
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
 
+            string newPath = path + ".new";
+            await File.WriteAllBytesAsync(newPath, content);
+
             try
             {
-                await File.WriteAllBytesAsync(path, content);
+                File.Move(newPath, path, true);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && File.Exists(path))
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 File.Move(path, stalePath, true);
-                await File.WriteAllBytesAsync(path, content);
+                File.Move(newPath, path);
             }
         }
 
