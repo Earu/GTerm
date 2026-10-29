@@ -10,9 +10,32 @@ namespace GTerm
     internal class GmodInterop
     {
         private const string GMOD_ID = "4000";
+        private static readonly string[] WINE_GMOD_PROCESS_NAMES = ["gmod_win64.exe", "gmod.exe"];
+
+        private static bool IsWineGmodProcess(Process process)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return false;
+
+            try
+            {
+                return WINE_GMOD_PROCESS_NAMES.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         private static Process? GetGmodProcess()
-            => Process.GetProcessesByName("gmod").FirstOrDefault();
+            => Process.GetProcessesByName("gmod").FirstOrDefault() ?? Process.GetProcesses().FirstOrDefault(IsWineGmodProcess);
+
+        private static string? GetGmodExecutablePath(Process process)
+        {
+            if (!IsWineGmodProcess(process)) return process.GetExecutablePath();
+
+            string? workingDirectory = process.GetWorkingDirectory();
+            return workingDirectory != null ? Path.Combine(workingDirectory, process.ProcessName) : null;
+        }
 
         /// <summary>
         /// Whether Garry's Mod is running at all. Distinguishes "not launched" from "launched but the
@@ -146,7 +169,7 @@ namespace GTerm
                 Process? gmodProcess = GetGmodProcess();
                 if (gmodProcess != null)
                 {
-                    string? path = gmodProcess.GetExecutablePath()?.Replace('\\', '/');
+                    string? path = GetGmodExecutablePath(gmodProcess)?.Replace('\\', '/');
                     if (path != null)
                     {
                         if (toBin)

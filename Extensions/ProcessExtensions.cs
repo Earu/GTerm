@@ -47,6 +47,25 @@ namespace GTerm.Extensions
             }
         }
 
+        public static string? GetWorkingDirectory(this Process process)
+        {
+            try
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                    return MacExtensions.GetWorkingDirectory(process.Id);
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    return File.ResolveLinkTarget($"/proc/{process.Id}/cwd", returnFinalTarget: true)?.FullName;
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                LocalLogger.WriteLine($"Failed to get working directory for process {process.Id}: {ex.Message}");
+                return null;
+            }
+        }
+
         public static Process? GetParent(this Process process) {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
 
